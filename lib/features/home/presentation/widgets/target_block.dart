@@ -11,30 +11,30 @@ class TargetBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final remaining = total - current;
+    final remaining = (total - current).clamp(0, total);
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(10),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.divider),
       ),
-      margin: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      padding: EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          ProgressRing(current: current, total: total, size: 100),
-          const SizedBox(width: 24),
+          ProgressRing(current: current, total: total, size: 92),
+          const SizedBox(width: 20),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Цель на год".toUpperCase(), style: AppTextStyles.label),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
                   "Осталось $remaining книг до конца года",
                   style: AppTextStyles.title,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -42,8 +42,8 @@ class TargetBlock extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("0", style: AppTextStyles.titleColor),
-                          Text("дней\nподряд", style: AppTextStyles.label),
+                          Text("7", style: AppTextStyles.titleColor),
+                          Text("дней подряд", style: AppTextStyles.label),
                         ],
                       ),
                     ),
@@ -51,17 +51,8 @@ class TargetBlock extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("0", style: AppTextStyles.titleColor),
-                          Text("цитат\nсохранено", style: AppTextStyles.label),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("0", style: AppTextStyles.titleColor),
-                          Text("слов в\nсловаре", style: AppTextStyles.label),
+                          Text("12", style: AppTextStyles.titleColor),
+                          Text("цитат", style: AppTextStyles.label),
                         ],
                       ),
                     ),

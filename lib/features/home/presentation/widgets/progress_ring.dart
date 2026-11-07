@@ -17,7 +17,7 @@ class ProgressRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = current / total;
+    final progress = total == 0 ? 0.0 : (current / total).clamp(0.0, 1.0);
 
     return SizedBox(
       width: size,
@@ -35,8 +35,9 @@ class ProgressRing extends StatelessWidget {
               Text(
                 '$current',
                 style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 26,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               Text(
@@ -63,7 +64,7 @@ class _RingPainter extends CustomPainter {
     final radius = (size.width - strokeWidth) / 2;
 
     final bgPaint = Paint()
-      ..color = AppColors.grey
+      ..color = AppColors.primarySoft
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
     canvas.drawCircle(center, radius, bgPaint);

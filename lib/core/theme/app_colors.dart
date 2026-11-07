@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const background = Color.fromARGB(255, 236, 217, 224);
-  static const primary = Color(0xFF6B3648);
-  static const label = Color.fromARGB(91, 75, 59, 68);
-  static const white = Color(0xFFffffff);
-  static const input = Color.fromARGB(26, 75, 59, 68);
-  static const grey = Color.fromRGBO(75, 59, 68, 0.183);
+  static const background = Color(0xFFF6F3EC);
+  static const surface = Color(0xFFFFFDF8);
+  static const primary = Color(0xFF23483B);
+  static const primarySoft = Color(0xFFDCE8E1);
+  static const accent = Color(0xFFC96D4B);
+  static const text = Color(0xFF202822);
+  static const label = Color(0xFF6D756F);
+  static const white = Color(0xFFFFFFFF);
+  static const input = Color(0xFFFFFFFF);
+  static const grey = Color(0xFFD9DDD8);
+  static const divider = Color(0xFFE8E5DE);
 }

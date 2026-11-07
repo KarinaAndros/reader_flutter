@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_app/core/theme/app_colors.dart';
 import 'package:flutter_app/features/home/data/quote_repository.dart';
 import 'package:pdfrx/pdfrx.dart';
 
@@ -12,7 +13,6 @@ class BookReaderScreen extends StatefulWidget {
 
 class _BookReaderScreenState extends State<BookReaderScreen> {
   final controller = PdfViewerController();
-  final _pageTextController = TextEditingController();
   final _quoteRepository = QuoteRepository();
   int _pageCount = 0;
   int _page = 0;
@@ -129,18 +129,35 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
   }
 
   @override
-  void dispose() {
-    _pageTextController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final fileName = widget.filePath.split('/').last;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(fileName),
+        toolbarHeight: 70,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              fileName.replaceFirst(
+                RegExp(r'\.pdf$', caseSensitive: false),
+                '',
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              _pageCount == 0 ? 'Загрузка…' : 'Страница $_page из $_pageCount',
+              style: const TextStyle(
+                color: AppColors.label,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
@@ -161,6 +178,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
         widget.filePath,
         controller: controller,
         params: PdfViewerParams(
+          backgroundColor: AppColors.background,
           textSelectionParams: const PdfTextSelectionParams(
             enabled: true,
             enableSelectionHandles: true,
@@ -186,56 +204,67 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
             setState(() {
               _pageCount = document.pages.length;
               _page = controller.pageNumber ?? 1;
-              _pageTextController.text = '$_page';
             });
           },
           onPageChanged: (page) {
             setState(() {
               _page = page ?? 1;
-              _pageTextController.text = '$_page';
             });
           },
         ),
       ),
       bottomNavigationBar: _pageCount > 0
-          ? Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: _page > 1
-                        ? () => controller.goToPage(pageNumber: _page - 1)
-                        : null,
-                  ),
-                  SizedBox(
-                    width: 48,
-                    child: TextField(
-                      controller: _pageTextController,
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      onSubmitted: (value) {
-                        final page = int.tryParse(value);
-                        if (page != null && page >= 1 && page <= _pageCount) {
-                          controller.goToPage(pageNumber: page);
-                        }
-                      },
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 4),
-                        border: OutlineInputBorder(),
+          ? SafeArea(
+              minimum: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+              child: Container(
+                height: 58,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.divider),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 24,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      onPressed: _page > 1
+                          ? () => controller.goToPage(pageNumber: _page - 1)
+                          : null,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primarySoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$_page  /  $_pageCount',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
-                  Text(' / $_pageCount'),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right),
-                    onPressed: _page < _pageCount
-                        ? () => controller.goToPage(pageNumber: _page + 1)
-                        : null,
-                  ),
-                ],
+                    IconButton(
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      onPressed: _page < _pageCount
+                          ? () => controller.goToPage(pageNumber: _page + 1)
+                          : null,
+                    ),
+                  ],
+                ),
               ),
             )
           : null,

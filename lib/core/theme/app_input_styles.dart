@@ -4,24 +4,20 @@ import 'package:flutter_app/core/theme/app_colors.dart';
 class AppInputStyles {
   static InputDecoration search({required String label}) {
     return InputDecoration(
-      labelText: label,
+      hintText: label,
       filled: true,
       fillColor: AppColors.input,
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppColors.label, width: 1),
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: AppColors.divider),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppColors.label, width: 1),
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
-      floatingLabelStyle: TextStyle(color: AppColors.primary),
-      labelStyle: TextStyle(color: AppColors.label),
-      contentPadding: EdgeInsets.symmetric(horizontal: 3, vertical: 20),
-      prefixIcon: Padding(
-        padding: EdgeInsets.only(left: 20, right: 3),
-        child: Icon(Icons.circle_outlined, color: AppColors.label),
-      ),
+      hintStyle: const TextStyle(color: AppColors.label),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      prefixIcon: const Icon(Icons.search_rounded, color: AppColors.label),
     );
   }
 }
