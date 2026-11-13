@@ -37,6 +37,11 @@ class SavedQuote {
 class QuoteRepository {
   static const _storageKey = 'saved_quotes';
 
+  Future<List<SavedQuote>> loadAll() async {
+    final quotes = await _loadAll();
+    return quotes..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
   Future<List<SavedQuote>> loadForBook(String bookPath) async {
     final quotes = await _loadAll();
     return quotes.where((quote) => quote.bookPath == bookPath).toList()

@@ -1,0 +1,36 @@
+Author portraits
+
+These third-party portraits are bundled locally. Original images are unchanged;
+Wikimedia thumbnails are used where noted. The app displays them in circular frames.
+
+Antoine de Saint-Exupery — author_saint_exupery.jpg
+Unknown photographer. Canada, 1942; public domain in Canada per source.
+https://commons.wikimedia.org/wiki/File:Antoine_de_Saint-Exup%C3%A9ry_(cropped).jpg
+
+Mikhail Bulgakov — author_bulgakov.jpg
+Unknown photographer, 1916. State Archive of Kyiv. Public domain (PD-old-100 / PD-US-expired).
+250px Wikimedia thumbnail.
+https://commons.wikimedia.org/wiki/File:Mikhail_Bulgakov,_1916.jpg
+
+George Orwell — author_orwell.jpg
+Branch of the National Union of Journalists, 1943. Public domain (PD-UK-unknown).
+250px Wikimedia thumbnail.
+https://commons.wikimedia.org/wiki/File:George_Orwell_press_photo.jpg
+
+Haruki Murakami — author_murakami.png
+Photo: wakarimasita of Flickr, 6 October 2005. Crop: JB Hoang Tam, via Wikimedia Commons.
+Creative Commons Attribution-ShareAlike 3.0 Unported.
+https://creativecommons.org/licenses/by-sa/3.0/
+https://commons.wikimedia.org/wiki/File:HarukiMurakami_(cropped).png
+Original photo: https://www.flickr.com/photos/91179013@N00/170162326/
+The source's pre-existing crop is bundled unchanged, under the same CC BY-SA 3.0 license.
+
+Ray Bradbury — author_bradbury.jpg
+CBS Television publicity photo, 1959. Public domain (PD-US-no-notice).
+250px Wikimedia thumbnail.
+https://commons.wikimedia.org/wiki/File:Ray_Bradbury_1959.JPG
+
+Ernest Hemingway — author_hemingway.jpg
+Lloyd Arnold, 1939. Public domain in the US (PD-US-not-renewed) per source.
+250px Wikimedia thumbnail.
+https://commons.wikimedia.org/wiki/File:ErnestHemingway.jpg

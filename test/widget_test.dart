@@ -1,30 +1,143 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-
+import 'package:flutter_app/features/home/data/book_library.dart';
 import 'package:flutter_app/main.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  for (final width in [320.0, 390.0, 1024.0, 1440.0]) {
+    testWidgets('Book shelves fit a $width pixel viewport', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = Size(width, 900);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      await tester.pumpWidget(const MyApp());
+      await tester.pumpAndSettle();
+      expect(find.text('Популярные книги для чтения'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.scrollUntilVisible(
+        find.text('Открыть TXT или PDF'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Открыть TXT или PDF').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Shelves support enlarged system text', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 900);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(() async {
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+      tester.view.devicePixelRatio = 1;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await BookLibrary().save([
+      const LibraryBook(
+        id: 'large-text-book',
+        title: 'Длинное название книги для проверки полки',
+        author: 'Из вашей библиотеки',
+        mood: '',
+        description: '',
+        coverStyle: 0,
+        filePath: '/books/large-text.txt',
+        page: 12,
+        pageCount: 100,
+      ),
+    ]);
     await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(
+      find.text('Ваш ритм'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Search finds authors and favorites appear in the library', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 900);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Поиск'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'оруэлл');
+    await tester.pumpAndSettle();
+    expect(find.text('1984'), findsWidgets);
+    expect(find.text('Маленький принц'), findsNothing);
+    final favorite = find.byTooltip('В избранное: 1984');
+    await tester.ensureVisible(favorite);
+    await tester.pumpAndSettle();
+    await tester.tap(favorite);
+    await tester.pumpAndSettle();
+    expect(await BookLibrary().loadFavorites(), contains('1984'));
+    await tester.enterText(find.byType(TextField), '');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.tap(find.text('Библиотека').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Избранное'));
+    await tester.pumpAndSettle();
+    expect(find.text('1984'), findsWidgets);
+    await tester.enterText(find.byType(TextField), 'нет такой книги');
+    await tester.pumpAndSettle();
+    expect(find.text('История пока не нашлась'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'Home shows imported history empty state without editorial shelf',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 1000);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      await tester.pumpWidget(const MyApp());
+      await tester.pumpAndSettle();
+      expect(find.text('Недавно открытые'), findsOneWidget);
+      expect(
+        find.text('Книги, которые вы открывали с устройства'),
+        findsNothing,
+      );
+      expect(find.text('Здесь появятся ваши книги'), findsOneWidget);
+      expect(find.text('Открыть TXT или PDF'), findsOneWidget);
+      expect(find.text('Выберите свою историю'), findsNothing);
+      expect(find.text('Ваша цель на год'), findsNothing);
+      expect(find.text('Ваш ритм'), findsOneWidget);
+      expect(
+        find.textContaining(RegExp('между строк', caseSensitive: false)),
+        findsNothing,
+      );
+      expect(find.byType(ListView), findsNothing);
+      await tester.ensureVisible(find.text('Подробнее'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Подробнее'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ваша цель на год'), findsOneWidget);
+      expect(find.text('Активность чтения'), findsOneWidget);
+      expect(find.text('Книжная полка'), findsOneWidget);
+      await tester.tap(find.byTooltip('Цитаты'));
+      await tester.pumpAndSettle();
+      expect(find.text('Слова, которые останутся'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

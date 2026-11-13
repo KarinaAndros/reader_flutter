@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/core/theme/app_colors.dart';
-import 'package:flutter_app/core/theme/app_text_styles.dart';
 import 'package:flutter_app/features/home/presentation/widgets/progress_ring.dart';
 
 class TargetBlock extends StatelessWidget {
@@ -11,7 +10,6 @@ class TargetBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final remaining = (total - current).clamp(0, total);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -22,45 +20,50 @@ class TargetBlock extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          ProgressRing(current: current, total: total, size: 92),
-          const SizedBox(width: 20),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Цель на год".toUpperCase(), style: AppTextStyles.label),
-                const SizedBox(height: 8),
-                Text(
-                  "Осталось $remaining книг до конца года",
-                  style: AppTextStyles.title,
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const Row(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("7", style: AppTextStyles.titleColor),
-                          Text("дней подряд", style: AppTextStyles.label),
-                        ],
-                      ),
+                    Icon(
+                      Icons.flag_outlined,
+                      size: 16,
+                      color: AppColors.primary,
                     ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("12", style: AppTextStyles.titleColor),
-                          Text("цитат", style: AppTextStyles.label),
-                        ],
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Цель на год',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.label,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  '$current из $total книг',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'В своём ритме, каждый день',
+                  style: TextStyle(fontSize: 12, color: AppColors.label),
+                ),
               ],
             ),
           ),
+          const SizedBox(width: 16),
+          ProgressRing(current: current, total: total, size: 76),
         ],
       ),
     );

@@ -29,22 +29,30 @@ class ProgressRing extends StatelessWidget {
             size: Size(size, size),
             painter: _RingPainter(progress: progress),
           ),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$current',
-                style: const TextStyle(
-                  fontSize: 26,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
-                ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: FittedBox(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$current',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    '/$total',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.label,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                '/$total',
-                style: const TextStyle(fontSize: 14, color: AppColors.grey),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -54,7 +62,7 @@ class ProgressRing extends StatelessWidget {
 
 class _RingPainter extends CustomPainter {
   final double progress;
-  static const strokeWidth = 12.0;
+  static const strokeWidth = 6.0;
 
   _RingPainter({required this.progress});
 
