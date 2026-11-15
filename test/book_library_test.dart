@@ -14,6 +14,7 @@ void main() {
         title: 'Моя книга',
         author: 'Автор',
         mood: 'Любое',
+        genre: 'Роман',
         description: '',
         coverStyle: 3,
         filePath: '/books/my-book.pdf',
@@ -23,6 +24,7 @@ void main() {
       final restored = (await BookLibrary().load()).single;
       expect(restored.filePath, '/books/my-book.pdf');
       expect(restored.title, 'Моя книга');
+      expect(restored.genre, 'Роман');
       expect(restored.page, 24);
       expect(restored.pageCount, 120);
       expect(restored.progress, .2);
@@ -33,5 +35,13 @@ void main() {
   test('Malformed library data does not prevent opening the app', () async {
     SharedPreferences.setMockInitialValues({BookLibrary.booksKey: '{broken'});
     expect(await BookLibrary().load(), isEmpty);
+  });
+
+  test('Books saved before genres were added still load', () {
+    final legacy = Map<String, Object?>.from(editorialBooks.first.toJson())
+      ..remove('genre');
+    final book = LibraryBook.fromJson(legacy);
+    expect(book.genre, isEmpty);
+    expect(book.title, editorialBooks.first.title);
   });
 }

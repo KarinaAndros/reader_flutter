@@ -14,6 +14,14 @@ void main() {
   String selectedBook(WidgetTester tester) =>
       tester.widget<BookSpotlight>(find.byType(BookSpotlight)).selectedId;
 
+  Future<void> tapControl(WidgetTester tester, String tooltip) async {
+    final control = find.byTooltip(tooltip);
+    await tester.ensureVisible(control);
+    await tester.pumpAndSettle();
+    await tester.tap(control);
+    await tester.pumpAndSettle();
+  }
+
   for (final width in [320.0, 1440.0]) {
     testWidgets('Themes switch and persist at width $width', (tester) async {
       tester.view.devicePixelRatio = 1;
@@ -27,12 +35,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(bookTheme(tester).brightness, Brightness.light);
       expect(bookTheme(tester).scaffoldBackgroundColor, Colors.white);
-      await tester.tap(find.byTooltip('Следующая книга'));
-      await tester.pumpAndSettle();
+      await tapControl(tester, 'Следующая книга');
       final selected = selectedBook(tester);
 
-      await tester.tap(find.byTooltip('Тёмная тема'));
-      await tester.pumpAndSettle();
+      await tapControl(tester, 'Тёмная тема');
       expect(bookTheme(tester).brightness, Brightness.dark);
       expect(selectedBook(tester), selected);
       expect(find.byTooltip('Светлая тема'), findsOneWidget);
@@ -41,8 +47,7 @@ void main() {
         'dark',
       );
       final darkAccent = bookTheme(tester).colorScheme.primary;
-      await tester.tap(find.byTooltip('Следующая книга'));
-      await tester.pumpAndSettle();
+      await tapControl(tester, 'Следующая книга');
       expect(bookTheme(tester).colorScheme.primary, isNot(darkAccent));
       expect(bookTheme(tester).brightness, Brightness.dark);
 
@@ -51,8 +56,7 @@ void main() {
       await tester.pumpWidget(const MyApp());
       await tester.pumpAndSettle();
       expect(bookTheme(tester).brightness, Brightness.dark);
-      await tester.tap(find.byTooltip('Светлая тема'));
-      await tester.pumpAndSettle();
+      await tapControl(tester, 'Светлая тема');
       expect(bookTheme(tester).brightness, Brightness.light);
       expect(bookTheme(tester).scaffoldBackgroundColor, Colors.white);
       expect(

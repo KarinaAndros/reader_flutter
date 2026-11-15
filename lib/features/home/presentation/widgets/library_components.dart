@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/features/home/data/book_library.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_cover.dart';
+import 'package:flutter_app/features/home/presentation/widgets/mirror_surface.dart';
 
 const librarySections = [
   'Главная',
@@ -276,22 +277,24 @@ class AddBookButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return FloatingActionButton(
-      key: const ValueKey('add-book-button'),
-      tooltip: 'Открыть TXT или PDF',
-      onPressed: onPressed,
-      backgroundColor: Color.alphaBlend(
-        scheme.primary.withValues(alpha: .1),
-        scheme.surface,
+    return MirrorSurface(
+      accent: scheme.primary,
+      selected: true,
+      borderRadius: BorderRadius.circular(100),
+      child: FloatingActionButton(
+        key: const ValueKey('add-book-button'),
+        tooltip: 'Открыть TXT или PDF',
+        onPressed: onPressed,
+        backgroundColor: Colors.transparent,
+        foregroundColor: scheme.primary,
+        shape: const CircleBorder(),
+        elevation: 0,
+        hoverElevation: 0,
+        focusElevation: 0,
+        highlightElevation: 0,
+        disabledElevation: 0,
+        child: const Icon(Icons.add_rounded, size: 28),
       ),
-      foregroundColor: scheme.primary,
-      shape: CircleBorder(
-        side: BorderSide(color: scheme.primary.withValues(alpha: .2)),
-      ),
-      elevation: 4,
-      hoverElevation: 6,
-      focusElevation: 6,
-      child: const Icon(Icons.add_rounded, size: 28),
     );
   }
 }

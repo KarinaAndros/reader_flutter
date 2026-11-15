@@ -30,5 +30,15 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/KarinaAndros/reader_flutter/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>dIe00m/z1nlULRYamll22I+cdYfgLjPNNFh/VyvCqvw=</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
 </dict>
 </plist>

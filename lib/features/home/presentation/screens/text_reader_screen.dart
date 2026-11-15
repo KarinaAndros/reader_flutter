@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/features/home/data/quote_repository.dart';
 import 'package:flutter_app/features/home/data/text_book_document.dart';
+import 'package:flutter_app/features/home/presentation/widgets/book_page_turn.dart';
 
 class TextReaderScreen extends StatefulWidget {
   const TextReaderScreen({
@@ -25,10 +26,11 @@ class TextReaderScreen extends StatefulWidget {
 class _TextReaderScreenState extends State<TextReaderScreen> {
   final _quotes = QuoteRepository();
   TextBookDocument? _document;
-  PageController? _controller;
+  final _controller = BookPageTurnController();
   String? _error;
   int _page = 1;
   double _fontSize = 20;
+  double? _scrubPage;
 
   @override
   void initState() {
@@ -45,7 +47,6 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
       setState(() {
         _document = document;
         _page = widget.initialPage.clamp(1, document.pages.length);
-        _controller = PageController(initialPage: _page - 1);
       });
       widget.onProgressChanged?.call(_page, document.pages.length);
     } catch (error) {
@@ -58,17 +59,11 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
   void _goTo(int page) {
-    if (_document == null || !_controller!.hasClients) return;
+    if (_document == null) return;
     FocusManager.instance.primaryFocus?.unfocus();
     ContextMenuController.removeAny();
-    _controller!.jumpToPage(page.clamp(1, _document!.pages.length) - 1);
+    _controller.goToPage(page.clamp(1, _document!.pages.length) - 1);
   }
 
   Future<void> _saveQuote(String text, int page) async {
@@ -164,6 +159,48 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
     );
   }
 
+  Widget _buildPage(BuildContext context, int index) {
+    final scheme = Theme.of(context).colorScheme;
+    return SingleChildScrollView(
+      key: PageStorageKey('text-page-$index'),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: SelectableText(
+            _document!.pages[index],
+            key: ValueKey('text-page-content-$index'),
+            style: TextStyle(
+              fontSize: _fontSize,
+              height: 1.75,
+              color: scheme.onSurface,
+              fontFamily: 'Georgia',
+            ),
+            contextMenuBuilder: (context, state) {
+              final value = state.textEditingValue;
+              return AdaptiveTextSelectionToolbar.buttonItems(
+                anchors: state.contextMenuAnchors,
+                buttonItems: [
+                  ...state.contextMenuButtonItems,
+                  if (!value.selection.isCollapsed && value.selection.isValid)
+                    ContextMenuButtonItem(
+                      label: 'Сохранить цитату',
+                      onPressed: () {
+                        final text = value.selection.textInside(value.text);
+                        ContextMenuController.removeAny();
+                        _saveQuote(text, index + 1);
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -229,56 +266,21 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
             )
           : _document == null
           ? const Center(child: CircularProgressIndicator())
-          : PageView.builder(
+          : BookPageTurn(
               key: const ValueKey('text-reader-pages'),
               controller: _controller,
-              itemCount: count,
-              onPageChanged: (index) {
+              page: _page - 1,
+              pageCount: count,
+              onTurnStart: () {
                 FocusManager.instance.primaryFocus?.unfocus();
+                ContextMenuController.removeAny();
+              },
+              onPageChanged: (index) {
                 setState(() => _page = index + 1);
                 widget.onProgressChanged?.call(_page, count);
               },
-              itemBuilder: (context, index) => SingleChildScrollView(
-                key: PageStorageKey('text-page-$index'),
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: SelectableText(
-                      _document!.pages[index],
-                      key: ValueKey('text-page-content-$index'),
-                      style: TextStyle(
-                        fontSize: _fontSize,
-                        height: 1.75,
-                        color: scheme.onSurface,
-                        fontFamily: 'Georgia',
-                      ),
-                      contextMenuBuilder: (context, state) {
-                        final value = state.textEditingValue;
-                        return AdaptiveTextSelectionToolbar.buttonItems(
-                          anchors: state.contextMenuAnchors,
-                          buttonItems: [
-                            ...state.contextMenuButtonItems,
-                            if (!value.selection.isCollapsed &&
-                                value.selection.isValid)
-                              ContextMenuButtonItem(
-                                label: 'Сохранить цитату',
-                                onPressed: () {
-                                  final text = value.selection.textInside(
-                                    value.text,
-                                  );
-                                  ContextMenuController.removeAny();
-                                  _saveQuote(text, index + 1);
-                                },
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
+              previewBuilder: _buildPage,
+              child: _buildPage(context, _page - 1),
             ),
       bottomNavigationBar: count == 0
           ? null
@@ -298,10 +300,16 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
                         child: Slider(
                           min: 1,
                           max: count > 1 ? count.toDouble() : 2,
-                          value: _page.toDouble(),
+                          value: _scrubPage ?? _page.toDouble(),
                           label: 'Страница $_page',
                           onChanged: count > 1
-                              ? (value) => _goTo(value.round())
+                              ? (value) => setState(() => _scrubPage = value)
+                              : null,
+                          onChangeEnd: count > 1
+                              ? (value) {
+                                  _goTo(value.round());
+                                  setState(() => _scrubPage = null);
+                                }
                               : null,
                         ),
                       ),

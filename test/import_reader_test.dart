@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_app/core/app_updates.dart';
 import 'package:flutter_app/features/home/data/book_library.dart';
 import 'package:flutter_app/features/home/data/quote_repository.dart';
 import 'package:flutter_app/features/home/data/reading_activity.dart';
@@ -72,6 +74,8 @@ void main() {
   late FilePickerPlatform originalPicker;
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.menu, (_) async => null);
     directory = await Directory.systemTemp.createTemp('reader-ui-test-');
     originalPicker = FilePickerPlatform.instance;
     picker = _Picker();
@@ -94,7 +98,58 @@ void main() {
           null,
         );
     await directory.delete(recursive: true);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.menu, null);
   });
+
+  testWidgets('macOS saves the open reader page before installing an update', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 820);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final file = File('${directory.path}/Обновление.TXT')
+      ..writeAsStringSync('Проверка сохранения открытой книги.\n\n' * 300);
+    picker.file = _PhoneFile(file, 'Обновление.TXT');
+    await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Открыть TXT или PDF'));
+    await pumpIo(
+      tester,
+      () => find.byType(SelectableText).evaluate().isNotEmpty,
+    );
+    await tester.tap(find.byTooltip('Следующая страница'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Страница 2 из'), findsOneWidget);
+
+    const codec = StandardMethodCodec();
+    Object? result;
+    var replied = false;
+    unawaited(
+      tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        AppUpdates.channel.name,
+        codec.encodeMethodCall(const MethodCall('prepareForUpdate')),
+        (reply) {
+          replied = true;
+          result = codec.decodeEnvelope(reply!);
+        },
+      ),
+    );
+    await pumpIo(tester, () => replied);
+    expect(result, isNull);
+    expect((await BookLibrary().load()).single.page, 2);
+    expect(
+      (await ReadingActivityRepository().load()).series(1).single.pages,
+      2,
+    );
+    expect(find.byType(TextReaderScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets(
     'Phone TXT imports, saves a quote and resumes from the saved page',
@@ -171,7 +226,9 @@ void main() {
           .widget<AmbientBackground>(find.byType(AmbientBackground))
           .atmosphere;
       await tester.runAsync(() => file.delete());
-      await tester.tap(find.text('Читать дальше').first);
+      await tester.ensureVisible(find.text('Продолжить'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Продолжить'));
       await pumpIo(
         tester,
         () =>

@@ -10,6 +10,7 @@ class LibraryBook {
     required this.mood,
     required this.description,
     required this.coverStyle,
+    this.genre = '',
     this.filePath,
     this.page = 1,
     this.pageCount = 0,
@@ -20,6 +21,7 @@ class LibraryBook {
   final String title;
   final String author;
   final String mood;
+  final String genre;
   final String description;
   final int coverStyle;
   final String? filePath;
@@ -37,6 +39,7 @@ class LibraryBook {
     title: title,
     author: author,
     mood: mood,
+    genre: genre,
     description: description,
     coverStyle: coverStyle,
     filePath: filePath,
@@ -50,6 +53,7 @@ class LibraryBook {
     'title': title,
     'author': author,
     'mood': mood,
+    'genre': genre,
     'description': description,
     'coverStyle': coverStyle,
     'filePath': filePath,
@@ -63,6 +67,7 @@ class LibraryBook {
     title: json['title'] as String,
     author: json['author'] as String,
     mood: json['mood'] as String,
+    genre: json['genre'] as String? ?? '',
     description: json['description'] as String,
     coverStyle: json['coverStyle'] as int,
     filePath: json['filePath'] as String?,
@@ -114,6 +119,7 @@ class BookLibrary {
 const editorialBooks = [
   LibraryBook(
     id: 'prince',
+    genre: 'Сказка',
     title: 'Маленький принц',
     author: 'Антуан де Сент-Экзюпери',
     mood: 'Мечтательное',
@@ -122,6 +128,7 @@ const editorialBooks = [
   ),
   LibraryBook(
     id: 'master',
+    genre: 'Фантастика',
     title: 'Мастер и Маргарита',
     author: 'Михаил Булгаков',
     mood: 'Загадочное',
@@ -130,6 +137,7 @@ const editorialBooks = [
   ),
   LibraryBook(
     id: '1984',
+    genre: 'Антиутопия',
     title: '1984',
     author: 'Джордж Оруэлл',
     mood: 'Вдумчивое',
@@ -138,6 +146,7 @@ const editorialBooks = [
   ),
   LibraryBook(
     id: 'forest',
+    genre: 'Роман',
     title: 'Норвежский лес',
     author: 'Харуки Мураками',
     mood: 'Спокойное',
@@ -146,6 +155,7 @@ const editorialBooks = [
   ),
   LibraryBook(
     id: 'dandelion',
+    genre: 'Роман',
     title: 'Вино из одуванчиков',
     author: 'Рэй Брэдбери',
     mood: 'Мечтательное',
@@ -154,6 +164,7 @@ const editorialBooks = [
   ),
   LibraryBook(
     id: 'ocean',
+    genre: 'Повесть',
     title: 'Старик и море',
     author: 'Эрнест Хемингуэй',
     mood: 'Спокойное',

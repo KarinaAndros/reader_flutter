@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_app/features/home/data/book_library.dart';
 import 'package:flutter_app/features/home/presentation/widgets/ambient_background.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_spotlight.dart';
 import 'package:flutter_app/main.dart';
@@ -109,6 +111,8 @@ void main() {
     tester,
   ) async {
     await openApp(tester);
+    await tester.ensureVisible(find.byTooltip('Следующая книга'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Следующая книга'));
     await tester.pumpAndSettle();
     final selected = accent(tester);
@@ -130,4 +134,48 @@ void main() {
       );
     }
   });
+
+  testWidgets(
+    'Spotlight indicators, keyboard and favorite action work together',
+    (tester) async {
+      await openApp(tester);
+      final indicator = find.byTooltip('Перейти к книге: 1984');
+      await tester.ensureVisible(indicator);
+      await tester.pumpAndSettle();
+      await tester.tap(indicator);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<BookSpotlight>(find.byType(BookSpotlight)).selectedId,
+        '1984',
+      );
+      expect(find.text('03 / 06'), findsNothing);
+
+      Focus.of(tester.element(find.byKey(const ValueKey('spotlight-books'))))
+          .requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<BookSpotlight>(find.byType(BookSpotlight)).selectedId,
+        'forest',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<BookSpotlight>(find.byType(BookSpotlight)).selectedId,
+        '1984',
+      );
+
+      final favorite = find.descendant(
+        of: find.byKey(const ValueKey('spotlight-slide-1984')),
+        matching: find.byTooltip('Сохранить книгу'),
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('spotlight-books')));
+      await tester.pumpAndSettle();
+      await tester.tap(favorite);
+      await tester.pumpAndSettle();
+      expect(await BookLibrary().loadFavorites(), contains('1984'));
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

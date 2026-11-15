@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_app/features/home/data/book_library.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_atmosphere.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_cover.dart';
-import 'package:flutter_app/features/home/presentation/widgets/author_avatar.dart';
+import 'package:flutter_app/features/home/presentation/widgets/mirror_surface.dart';
 
 class BookSpotlight extends StatelessWidget {
   const BookSpotlight({
@@ -32,78 +34,125 @@ class BookSpotlight extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      if (books.isEmpty) return const SizedBox.shrink();
       final wide = constraints.maxWidth >= 720;
       final textScale = (MediaQuery.textScalerOf(context).scale(14) / 14).clamp(
         1.0,
         3.0,
       );
       final slideWidth = wide
-          ? (constraints.maxWidth * .62).clamp(520.0, 700.0)
-          : (constraints.maxWidth - 96).clamp(224.0, 320.0);
+          ? (constraints.maxWidth * .28).clamp(264.0, 332.0)
+          : (constraints.maxWidth - 124).clamp(208.0, 280.0);
       final slideHeight = wide
-          ? 288 + (textScale - 1) * 230
-          : 320 + (textScale - 1) * 160;
+          ? 560 + (textScale - 1) * 360
+          : 424 + (textScale - 1) * 280;
       final accent = Theme.of(context).colorScheme.primary;
       final dotCount = math.min(books.length, 7);
       final firstDot = (_selectedIndex - 3).clamp(0, books.length - dotCount);
-      return Column(
-        children: [
-          SizedBox(
-            height: slideHeight + 52,
-            child: _BookSlideCarousel(
-              width: constraints.maxWidth,
-              slideWidth: slideWidth,
-              slideHeight: slideHeight,
-              gap: wide ? 40 : 28,
-              wide: wide,
-              books: books,
-              selectedId: selectedId,
-              onSelected: onSelected,
-              onOpen: onOpen,
-              onFavorite: onFavorite,
-              isFavorite: isFavorite,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Предыдущая книга',
-                  onPressed: books.length > 1 ? () => _step(-1) : null,
-                  icon: const Icon(Icons.arrow_back_rounded, size: 19),
-                ),
-                const SizedBox(width: 8),
-                for (var index = firstDot; index < firstDot + dotCount; index++)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: AnimatedContainer(
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 220),
-                      width: index == _selectedIndex ? 20 : 5,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: index == _selectedIndex
-                            ? accent
-                            : Theme.of(context).colorScheme.outline
-                                  .withValues(alpha: .5),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+      return CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _step(-1),
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () => _step(1),
+        },
+        child: Focus(
+          child: Column(
+            children: [
+              _BookSlideCarousel(
+                width: constraints.maxWidth,
+                slideWidth: slideWidth,
+                slideHeight: slideHeight,
+                gap: wide ? 96 : 64,
+                wide: wide,
+                books: books,
+                selectedId: selectedId,
+                onSelected: onSelected,
+                onOpen: onOpen,
+                onFavorite: onFavorite,
+                isFavorite: isFavorite,
+              ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: 'Предыдущая книга',
+                          onPressed: books.length > 1 ? () => _step(-1) : null,
+                          icon: const Icon(Icons.arrow_back_rounded, size: 19),
+                        ),
+                        Expanded(
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            children: [
+                              for (
+                                var index = firstDot;
+                                index < firstDot + dotCount;
+                                index++
+                              )
+                                Semantics(
+                                  selected: index == _selectedIndex,
+                                  child: Tooltip(
+                                    message:
+                                        'Перейти к книге: ${books[index].title}',
+                                    child: InkResponse(
+                                      onTap: () => onSelected(books[index]),
+                                      radius: 18,
+                                      child: SizedBox(
+                                        width: 24,
+                                        height: 36,
+                                        child: Center(
+                                          child: AnimatedContainer(
+                                            duration:
+                                                MediaQuery.disableAnimationsOf(
+                                                  context,
+                                                )
+                                                ? Duration.zero
+                                                : const Duration(
+                                                    milliseconds: 220,
+                                                  ),
+                                            width: index == _selectedIndex
+                                                ? 20
+                                                : 5,
+                                            height: 5,
+                                            decoration: BoxDecoration(
+                                              color: index == _selectedIndex
+                                                  ? accent
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .outline
+                                                        .withValues(alpha: .5),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Следующая книга',
+                          onPressed: books.length > 1 ? () => _step(1) : null,
+                          icon: const Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 19,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Следующая книга',
-                  onPressed: books.length > 1 ? () => _step(1) : null,
-                  icon: const Icon(Icons.arrow_forward_rounded, size: 19),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       );
     },
   );
@@ -137,6 +186,13 @@ class _BookSlideCarousel extends StatefulWidget {
 class _BookSlideCarouselState extends State<_BookSlideCarousel> {
   late PageController _controller;
   late int _index;
+  final _slideHeights = <String, double>{};
+
+  void _recordHeight(String bookId, Size size) {
+    if (!mounted || _slideHeights[bookId] == size.height) return;
+    setState(() => _slideHeights[bookId] = size.height);
+  }
+
   int get _selectedIndex => math.max(
     0,
     widget.books.indexWhere((book) => book.id == widget.selectedId),
@@ -157,6 +213,10 @@ class _BookSlideCarouselState extends State<_BookSlideCarousel> {
   @override
   void didUpdateWidget(covariant _BookSlideCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.slideWidth != widget.slideWidth ||
+        oldWidget.slideHeight != widget.slideHeight) {
+      _slideHeights.clear();
+    }
     final next = _selectedIndex;
     if (oldWidget.width != widget.width ||
         oldWidget.slideWidth != widget.slideWidth ||
@@ -179,7 +239,7 @@ class _BookSlideCarouselState extends State<_BookSlideCarousel> {
       } else {
         _controller.animateToPage(
           _index,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 550),
           curve: Curves.easeInOutCubic,
         );
       }
@@ -193,50 +253,118 @@ class _BookSlideCarouselState extends State<_BookSlideCarousel> {
   }
 
   @override
-  Widget build(BuildContext context) => PageView.builder(
-    key: const ValueKey('spotlight-books'),
-    controller: _controller,
-    itemCount: widget.books.length,
-    onPageChanged: (index) {
-      _index = index;
-      widget.onSelected(widget.books[index]);
-    },
-    itemBuilder: (context, index) => AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final page =
-            _controller.positions.length == 1 &&
-                _controller.position.hasContentDimensions
-            ? _controller.page ?? _index.toDouble()
-            : _index.toDouble();
-        final distance = (index - page).abs().clamp(0.0, 1.0);
-        return Center(
-          child: Transform.scale(
-            scale: 1 - distance * .025,
-            child: SizedBox(
-              width: widget.slideWidth,
-              height: widget.slideHeight,
-              child: _BookSlide(
-                book: widget.books[index],
-                index: index,
-                wide: widget.wide,
-                selected: index == _selectedIndex,
-                favorite: widget.isFavorite(widget.books[index]),
-                onOpen: () => widget.onOpen(widget.books[index]),
-                onFavorite: () => widget.onFavorite(widget.books[index]),
+  Widget build(BuildContext context) => AnimatedSize(
+    duration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200),
+    curve: Curves.easeInOutCubic,
+    alignment: Alignment.topCenter,
+    clipBehavior: Clip.none,
+    child: SizedBox(
+      height: (_slideHeights[widget.selectedId] ?? widget.slideHeight) + 52,
+      child: PageView.builder(
+        key: const ValueKey('spotlight-books'),
+        clipBehavior: Clip.none,
+        controller: _controller,
+        itemCount: widget.books.length,
+        onPageChanged: (index) {
+          _index = index;
+          widget.onSelected(widget.books[index]);
+        },
+        itemBuilder: (context, index) => AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final page =
+                _controller.positions.length == 1 &&
+                    _controller.position.hasContentDimensions
+                ? _controller.page ?? _index.toDouble()
+                : _index.toDouble();
+            final pageOffset = (index - page).clamp(-1.0, 1.0);
+            final distance = pageOffset.abs();
+            final reduceMotion = MediaQuery.disableAnimationsOf(context);
+            final angle = reduceMotion ? 0.0 : pageOffset * -.08;
+            return OverflowBox(
+              minHeight: 0,
+              maxHeight: double.infinity,
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, .001)
+                  ..rotateY(angle),
+                child: Transform.scale(
+                  scale: 1 - distance * .045,
+                  child: RepaintBoundary(
+                    child: _MeasuredSlide(
+                      onSizeChanged: (size) =>
+                          _recordHeight(widget.books[index].id, size),
+                      child: SizedBox(
+                        width: widget.slideWidth,
+                        child: _BookSlide(
+                          key: ValueKey(
+                            'spotlight-slide-${widget.books[index].id}',
+                          ),
+                          book: widget.books[index],
+                          pageOffset: reduceMotion ? 0 : pageOffset,
+                          wide: widget.wide,
+                          selected: index == _selectedIndex,
+                          favorite: widget.isFavorite(widget.books[index]),
+                          onOpen: () => widget.onOpen(widget.books[index]),
+                          onFavorite: () =>
+                              widget.onFavorite(widget.books[index]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     ),
   );
 }
 
+class _MeasuredSlide extends SingleChildRenderObjectWidget {
+  const _MeasuredSlide({required this.onSizeChanged, required super.child});
+
+  final ValueChanged<Size> onSizeChanged;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _SlideSizeObserver(onSizeChanged);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _SlideSizeObserver renderObject,
+  ) {
+    renderObject.onSizeChanged = onSizeChanged;
+  }
+}
+
+class _SlideSizeObserver extends RenderProxyBox {
+  _SlideSizeObserver(this.onSizeChanged);
+
+  ValueChanged<Size> onSizeChanged;
+  Size? _previousSize;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size == _previousSize) return;
+    _previousSize = size;
+    final measuredSize = size;
+    final callback = onSizeChanged;
+    WidgetsBinding.instance.addPostFrameCallback((_) => callback(measuredSize));
+  }
+}
+
 class _BookSlide extends StatelessWidget {
   const _BookSlide({
+    super.key,
     required this.book,
-    required this.index,
+    required this.pageOffset,
     required this.wide,
     required this.selected,
     required this.favorite,
@@ -244,7 +372,7 @@ class _BookSlide extends StatelessWidget {
     required this.onFavorite,
   });
   final LibraryBook book;
-  final int index;
+  final double pageOffset;
   final bool wide, selected, favorite;
   final VoidCallback onOpen, onFavorite;
 
@@ -253,64 +381,38 @@ class _BookSlide extends StatelessWidget {
     final accent = selected
         ? Theme.of(context).colorScheme.primary
         : BookAtmosphere.forBook(book).accentFor(Theme.of(context).brightness);
-    final coverHeight = wide ? 180.0 : 128.0;
-    final cover = SizedBox(
-      height: coverHeight + 16,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 0,
-            top: -4,
-            child: Text(
-              (index + 1).toString().padLeft(2, '0'),
-              textScaler: TextScaler.noScaling,
-              style: TextStyle(
-                color: accent.withValues(alpha: .07),
-                fontSize: wide ? 68 : 44,
-                fontWeight: FontWeight.w300,
-                height: 1,
-              ),
-            ),
+    final movement = Curves.easeInOutSine.transform(pageOffset.abs());
+    final direction = pageOffset.sign * movement;
+    final cover = Transform.translate(
+      offset: Offset(-direction * 18, movement * 5),
+      child: Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..setEntry(3, 2, .0018)
+          ..rotateY(direction * .22)
+          ..rotateZ(-direction * .045),
+        child: Transform.scale(
+          scale: 1 - movement * .06,
+          child: RepaintBoundary(
+            child: _ReflectedCover(book: book, wide: wide, onOpen: onOpen),
           ),
-          Center(
-            child: Transform.rotate(
-              angle: selected ? -.025 : .025,
-              child: SizedBox(
-                width: coverHeight * .69,
-                height: coverHeight,
-                child: Stack(
-                  fit: StackFit.expand,
-                  clipBehavior: Clip.none,
-                  children: [
-                    BookCover(
-                      book: book,
-                      showAuthorAvatar: false,
-                      showShadow: false,
-                      overlay: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: onOpen,
-                          borderRadius: BorderRadius.circular(10),
-                          child: Semantics(
-                            button: true,
-                            label: 'О книге ${book.title}',
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
     final details = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _SpotlightBadge(
+          accent: accent,
+          icon: book.isLocal ? Icons.offline_pin_outlined : Icons.auto_awesome,
+          label: book.isLocal
+              ? '${book.isPdf ? 'PDF' : 'TXT'} · На устройстве'
+              : book.mood.isEmpty
+              ? 'Для вдохновения'
+              : book.mood,
+        ),
+        SizedBox(height: wide ? 12 : 8),
         if (wide) ...[
           Text(
             book.isLocal ? 'ВАША КНИЖНАЯ ПОЛКА' : 'СТОИТ ПРОЧИТАТЬ',
@@ -347,7 +449,7 @@ class _BookSlide extends StatelessWidget {
             height: 1.4,
           ),
         ),
-        if (wide) ...[
+        if (wide && book.description.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
             book.description,
@@ -357,6 +459,27 @@ class _BookSlide extends StatelessWidget {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
               height: 1.5,
+            ),
+          ),
+        ],
+        if (book.isLocal && book.pageCount > 0) ...[
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            value: book.progress,
+            color: accent,
+            backgroundColor: accent.withValues(alpha: .12),
+            minHeight: 4,
+            borderRadius: BorderRadius.circular(4),
+            semanticsLabel: 'Прогресс книги ${book.title}',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Стр. ${book.page} из ${book.pageCount} · '
+            '${(book.progress * 100).round()}%',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 11,
+              height: 1.4,
             ),
           ),
         ],
@@ -401,85 +524,166 @@ class _BookSlide extends StatelessWidget {
                   ? 'Убрать книгу из избранного'
                   : 'Сохранить книгу',
               onPressed: onFavorite,
-              style: IconButton.styleFrom(foregroundColor: accent),
-              icon: Icon(
-                favorite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                size: 21,
+              style: IconButton.styleFrom(
+                foregroundColor: accent,
+                backgroundColor: accent.withValues(alpha: favorite ? .16 : .06),
+              ),
+              isSelected: favorite,
+              icon: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  favorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  key: ValueKey(favorite),
+                  size: 21,
+                ),
               ),
             ),
           ],
         ),
       ],
     );
-    final avatarSize = wide ? 44.0 : 38.0;
-    return Stack(
-      fit: StackFit.expand,
-      clipBehavior: Clip.none,
-      children: [
-        AnimatedContainer(
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 250),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color.alphaBlend(
-                  accent.withValues(alpha: .045),
-                  Theme.of(context).colorScheme.surface,
-                ),
-                Theme.of(context).colorScheme.surface,
-              ],
-            ),
-            border: Border.all(
-              color: selected
-                  ? accent.withValues(alpha: .25)
-                  : Theme.of(context).colorScheme.outlineVariant,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .045),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: EdgeInsets.all(wide ? 20 : 16),
-            child: wide
-                ? Row(
-                    children: [
-                      SizedBox(width: 154, child: cover),
-                      const SizedBox(width: 20),
-                      Expanded(child: details),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      cover,
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.bottomLeft,
-                          child: details,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
+    return MirrorSurface(
+      accent: accent,
+      selected: selected,
+      child: Padding(
+        padding: EdgeInsets.all(wide ? 20 : 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [cover, const SizedBox(height: 6), details],
         ),
-        Positioned(
-          top: -avatarSize / 2,
-          right: -avatarSize / 2,
-          child: AuthorAvatar(author: book.author, size: avatarSize),
-        ),
-      ],
+      ),
     );
   }
+}
+
+class _ReflectedCover extends StatelessWidget {
+  const _ReflectedCover({
+    required this.book,
+    required this.wide,
+    required this.onOpen,
+  });
+
+  final LibraryBook book;
+  final bool wide;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = wide ? 184.0 : 128.0;
+    final width = height * .69;
+    final reflectionHeight = wide ? 36.0 : 26.0;
+    return SizedBox(
+      height: height + reflectionHeight + 8,
+      child: Stack(
+        children: [
+          Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: BookCover(
+                book: book,
+                showAuthorAvatar: false,
+                overlay: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onOpen,
+                    child: Semantics(
+                      button: true,
+                      label: 'О книге ${book.title}',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: height + 6,
+            left: 0,
+            right: 0,
+            child: ExcludeSemantics(
+              child: IgnorePointer(
+                child: Center(
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (bounds) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0x65FFFFFF), Colors.transparent],
+                    ).createShader(bounds),
+                    child: SizedBox(
+                      width: width,
+                      height: reflectionHeight,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topCenter,
+                          minHeight: height,
+                          maxHeight: height,
+                          child: Transform.flip(
+                            flipY: true,
+                            child: BookCover(
+                              book: book,
+                              showAuthorAvatar: false,
+                              showShadow: false,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpotlightBadge extends StatelessWidget {
+  const _SpotlightBadge({
+    required this.accent,
+    required this.icon,
+    required this.label,
+  });
+
+  final Color accent;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+    decoration: BoxDecoration(
+      color: accent.withValues(alpha: .08),
+      border: Border.all(color: accent.withValues(alpha: .16)),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: accent),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: accent, fontSize: 10, height: 1.3),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class ReadingJourney extends StatelessWidget {

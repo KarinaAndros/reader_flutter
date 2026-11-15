@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_app/features/home/data/quote_repository.dart';
+import 'package:flutter_app/features/home/presentation/widgets/book_page_turn.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 class BookReaderScreen extends StatefulWidget {
@@ -19,6 +21,8 @@ class BookReaderScreen extends StatefulWidget {
 
 class _BookReaderScreenState extends State<BookReaderScreen> {
   final controller = PdfViewerController();
+  final _pageTurn = BookPageTurnController();
+  PdfDocument? _document;
   final _quoteRepository = QuoteRepository();
   int _pageCount = 0;
   int _page = 0;
@@ -180,9 +184,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                                 ),
                                 onTap: () {
                                   Navigator.pop(sheetContext);
-                                  controller.goToPage(
-                                    pageNumber: quote.pageNumber,
-                                  );
+                                  _pageTurn.goToPage(quote.pageNumber - 1);
                                 },
                                 trailing: IconButton(
                                   tooltip: 'Удалить цитату',
@@ -205,6 +207,61 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPagePreview(BuildContext context, int index) {
+    if (!controller.isReady || _document == null) {
+      return const SizedBox.shrink();
+    }
+    final matrix = controller.calcMatrixForClampedToNearestBoundary(
+      controller.calcMatrixForPage(
+        pageNumber: index + 1,
+        anchor: PdfPageAnchor.top,
+      ),
+      viewSize: controller.viewSize,
+    );
+    final rect = MatrixUtils.transformRect(
+      matrix,
+      controller.layout.pageLayouts[index],
+    );
+    final colors = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: Color.alphaBlend(
+        colors.primary.withValues(alpha: .035),
+        colors.surfaceContainerLowest,
+      ),
+      child: Stack(
+        children: [
+          Positioned.fromRect(
+            rect: rect,
+            child: PdfPageView(
+              document: _document,
+              pageNumber: index + 1,
+              maximumDpi: 144,
+              decoration: const BoxDecoration(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  PdfPageLayout _horizontalLayout(List<PdfPage> pages, PdfViewerParams params) {
+    final height = pages.fold<double>(
+      0,
+      (height, page) => page.height > height ? page.height : height,
+    );
+    final layouts = <Rect>[];
+    var x = params.margin;
+    for (final page in pages) {
+      final width = page.width * height / page.height;
+      layouts.add(Rect.fromLTWH(x, params.margin, width, height));
+      x += width + params.margin * 2;
+    }
+    return PdfPageLayout(
+      pageLayouts: layouts,
+      documentSize: Size(x - params.margin, height + params.margin * 2),
     );
   }
 
@@ -299,94 +356,129 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: PdfViewer.file(
-              widget.filePath,
-              controller: controller,
-              initialPageNumber: widget.initialPage,
-              params: PdfViewerParams(
-                backgroundColor: Color.alphaBlend(
-                  accent.withValues(alpha: .035),
-                  Theme.of(context).colorScheme.surfaceContainerLowest,
-                ),
-                loadingBannerBuilder: (context, bytesDownloaded, totalBytes) =>
-                    const Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                errorBannerBuilder: (context, error, stackTrace, documentRef) =>
-                    Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.description_outlined,
-                              size: 40,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'Не удалось открыть PDF',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Вернитесь в библиотеку и выберите другой файл.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
+            child: BookPageTurn(
+              controller: _pageTurn,
+              page: _page > 0 ? _page - 1 : 0,
+              pageCount: _pageCount,
+              overlayGestures: true,
+              paperColor: Colors.white,
+              onTurnStart: () {
+                ContextMenuController.removeAny();
+                if (controller.isReady) {
+                  controller.textSelectionDelegate.clearTextSelection();
+                }
+              },
+              onPageChanged: (index) => controller.goToPage(
+                pageNumber: index + 1,
+                anchor: PdfPageAnchor.top,
+                duration: Duration.zero,
+              ),
+              previewBuilder: _buildPagePreview,
+              child: PdfViewer.file(
+                widget.filePath,
+                controller: controller,
+                initialPageNumber: widget.initialPage,
+                params: PdfViewerParams(
+                  layoutPages: _horizontalLayout,
+                  onKey: (params, key, isRealKeyPress) {
+                    if (const [
+                      LogicalKeyboardKey.arrowLeft,
+                      LogicalKeyboardKey.arrowRight,
+                      LogicalKeyboardKey.pageUp,
+                      LogicalKeyboardKey.pageDown,
+                      LogicalKeyboardKey.escape,
+                    ].contains(key)) {
+                      return false;
+                    }
+                    return null;
+                  },
+                  backgroundColor: Color.alphaBlend(
+                    accent.withValues(alpha: .035),
+                    Theme.of(context).colorScheme.surfaceContainerLowest,
+                  ),
+                  loadingBannerBuilder:
+                      (context, bytesDownloaded, totalBytes) => const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                  errorBannerBuilder:
+                      (context, error, stackTrace, documentRef) => Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.description_outlined,
+                                size: 40,
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurfaceVariant,
                               ),
-                            ),
-                          ],
+                              SizedBox(height: 16),
+                              Text(
+                                'Не удалось открыть PDF',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Вернитесь в библиотеку и выберите другой файл.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                textSelectionParams: const PdfTextSelectionParams(
-                  enabled: true,
-                  enableSelectionHandles: true,
-                  showContextMenuAutomatically: true,
-                ),
-                customizeContextMenuItems: (params, items) {
-                  if (!params.isTextSelectionEnabled ||
-                      !params.textSelectionDelegate.isCopyAllowed ||
-                      !params.textSelectionDelegate.hasSelectedText) {
-                    return;
-                  }
-                  items.add(
-                    ContextMenuButtonItem(
-                      label: 'Сохранить цитату',
-                      onPressed: () {
-                        params.dismissContextMenu();
-                        _saveSelectedQuote(params.textSelectionDelegate);
-                      },
-                    ),
-                  );
-                },
-                onViewerReady: (document, controller) {
-                  if (!mounted) return;
-                  setState(() {
-                    _pageCount = document.pages.length;
-                    _page = controller.pageNumber ?? 1;
-                  });
-                  widget.onProgressChanged?.call(_page, _pageCount);
-                },
-                onPageChanged: (page) {
-                  if (!mounted) return;
-                  setState(() {
-                    _page = page ?? 1;
-                  });
-                  if (_pageCount > 0) {
+                  textSelectionParams: const PdfTextSelectionParams(
+                    enabled: true,
+                    enableSelectionHandles: true,
+                    showContextMenuAutomatically: true,
+                  ),
+                  customizeContextMenuItems: (params, items) {
+                    if (!params.isTextSelectionEnabled ||
+                        !params.textSelectionDelegate.isCopyAllowed ||
+                        !params.textSelectionDelegate.hasSelectedText) {
+                      return;
+                    }
+                    items.add(
+                      ContextMenuButtonItem(
+                        label: 'Сохранить цитату',
+                        onPressed: () {
+                          params.dismissContextMenu();
+                          _saveSelectedQuote(params.textSelectionDelegate);
+                        },
+                      ),
+                    );
+                  },
+                  onViewerReady: (document, controller) {
+                    if (!mounted) return;
+                    setState(() {
+                      _document = document;
+                      _pageCount = document.pages.length;
+                      _page = controller.pageNumber ?? 1;
+                    });
                     widget.onProgressChanged?.call(_page, _pageCount);
-                  }
-                },
+                  },
+                  onPageChanged: (page) {
+                    if (!mounted) return;
+                    setState(() {
+                      _page = page ?? 1;
+                    });
+                    if (_pageCount > 0) {
+                      widget.onProgressChanged?.call(_page, _pageCount);
+                    }
+                  },
+                ),
               ),
             ),
           ),
@@ -457,8 +549,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                             tooltip: 'Предыдущая страница',
                             icon: const Icon(Icons.chevron_left_rounded),
                             onPressed: _page > 1
-                                ? () =>
-                                      controller.goToPage(pageNumber: _page - 1)
+                                ? () => _pageTurn.goToPage(_page - 2)
                                 : null,
                           ),
                           Expanded(
@@ -476,7 +567,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                                         setState(() => _scrubPage = value)
                                   : null,
                               onChangeEnd: (value) {
-                                controller.goToPage(pageNumber: value.round());
+                                _pageTurn.goToPage(value.round() - 1);
                                 setState(() => _scrubPage = null);
                               },
                             ),
@@ -485,8 +576,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                             tooltip: 'Следующая страница',
                             icon: const Icon(Icons.chevron_right_rounded),
                             onPressed: _page < _pageCount
-                                ? () =>
-                                      controller.goToPage(pageNumber: _page + 1)
+                                ? () => _pageTurn.goToPage(_page)
                                 : null,
                           ),
                         ],

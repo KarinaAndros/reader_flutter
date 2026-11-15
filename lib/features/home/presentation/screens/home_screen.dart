@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_app/core/app_updates.dart';
 import 'package:flutter_app/core/theme/app_input_styles.dart';
 import 'package:flutter_app/core/theme/app_theme.dart';
 import 'package:flutter_app/features/home/data/book_library.dart';
@@ -13,10 +15,14 @@ import 'package:flutter_app/features/home/presentation/screens/book_reader_scree
 import 'package:flutter_app/features/home/presentation/screens/text_reader_screen.dart';
 import 'package:flutter_app/features/home/presentation/widgets/ambient_background.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_cover.dart';
+import 'package:flutter_app/features/home/presentation/widgets/book_discovery_sheet.dart';
 import 'package:flutter_app/features/home/presentation/widgets/library_components.dart';
+import 'package:flutter_app/features/home/presentation/widgets/library_app_header.dart';
+import 'package:flutter_app/features/home/presentation/widgets/macos_library_menu.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_atmosphere.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_spotlight.dart';
 import 'package:flutter_app/features/home/presentation/widgets/reading_charts.dart';
+import 'package:flutter_app/features/home/presentation/widgets/reading_welcome_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.onToggleTheme});
@@ -32,10 +38,14 @@ class _HomeScreenState extends State<HomeScreen> {
   final _fileImporter = BookFileImporter();
   final _quoteRepository = QuoteRepository();
   final _activityRepository = ReadingActivityRepository();
+  final _updates = AppUpdates();
+  LibraryBook? _readingBook;
+  bool _checkingForUpdates = false;
   ReadingActivity _activity = const ReadingActivity();
   bool _activityErrorShown = false;
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   List<LibraryBook> _books = [];
   List<SavedQuote> _quotes = [];
   Set<String> _favorites = {};
@@ -90,14 +100,44 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _updates.prepareBeforeInstall(_saveBeforeUpdate);
     _loadLibrary();
   }
 
   @override
   void dispose() {
+    _updates.prepareBeforeInstall(null);
     _scrollController.dispose();
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveBeforeUpdate() async {
+    final reading = _readingBook;
+    await _library.save([
+      ?reading,
+      ..._books.where((book) => book.id != reading?.id),
+    ]);
+    await _activityRepository.flush();
+  }
+
+  Future<void> _checkForUpdates() async {
+    if (_checkingForUpdates) return;
+    setState(() => _checkingForUpdates = true);
+    try {
+      await _updates.check();
+    } on PlatformException catch (error) {
+      _message(
+        error.code == 'update_in_progress'
+            ? 'Проверка обновлений уже выполняется.'
+            : 'Не удалось запустить обновление. Попробуйте открыть MYB снова.',
+      );
+    } on MissingPluginException {
+      _message('Обновления доступны в установленной версии MYB для macOS.');
+    } finally {
+      if (mounted) setState(() => _checkingForUpdates = false);
+    }
   }
 
   Future<void> _loadLibrary() async {
@@ -150,6 +190,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _previewBook = null;
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  void _focusSearch() {
+    _selectSection(1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
   }
 
   Future<void> _toggleFavorite(LibraryBook book) async {
@@ -218,8 +265,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await _resolveAtmosphere(book);
     if (!mounted) return;
     var updated = book;
+    _readingBook = book;
     void onProgress(int page, int count) {
       updated = book.withProgress(page, count);
+      _readingBook = updated;
       if (count > 0 && page >= 1 && page <= count) {
         _recordReadingPage(book.id, page);
       }
@@ -252,10 +301,33 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       await _library.save(_books);
+      _readingBook = null;
       final quotes = await _quoteRepository.loadAll();
       if (mounted) setState(() => _quotes = quotes);
     } catch (_) {
       _message('Не удалось сохранить прогресс чтения.');
+    }
+  }
+
+  Future<void> _showRandomBookPicker() async {
+    final book = await showModalBottomSheet<LibraryBook>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => Theme(
+        data: _bookTheme,
+        child: BookDiscoverySheet(
+          books: _spotlightBooks,
+          onSelected: _activateBook,
+          onOpen: (book) => Navigator.pop(sheetContext, book),
+        ),
+      ),
+    );
+    if (!mounted || book == null) return;
+    if (book.isLocal) {
+      await _readBook(book);
+    } else {
+      await _showBook(book);
     }
   }
 
@@ -393,7 +465,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ? Duration.zero
         : const Duration(milliseconds: 650),
     curve: Curves.easeInOutCubic,
-    child: Builder(builder: _buildShell),
+    child: MacOSLibraryMenu(
+      enabled: !_loading && (ModalRoute.of(context)?.isCurrent ?? true),
+      onOpen: _importing ? null : _importBook,
+      onSearch: _focusSearch,
+      onPickBook: _showRandomBookPicker,
+      onSelectSection: _selectSection,
+      onToggleTheme: widget.onToggleTheme,
+      onCheckForUpdates: !_loading && !_checkingForUpdates
+          ? _checkForUpdates
+          : null,
+      child: Builder(builder: _buildShell),
+    ),
   );
 
   Widget _buildShell(BuildContext context) {
@@ -414,6 +497,13 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Column(
                   children: [
+                    LibraryAppHeader(
+                      desktop: desktop,
+                      onToggleTheme: widget.onToggleTheme,
+                      onCheckForUpdates: AppUpdates.supported && !_loading
+                          ? _checkForUpdates
+                          : null,
+                    ),
                     Expanded(
                       child: _loading
                           ? const Center(child: CircularProgressIndicator())
@@ -446,6 +536,25 @@ class _HomeScreenState extends State<HomeScreen> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
+                                      if (_section == 0) ...[
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: desktop ? 36 : 20,
+                                          ),
+                                          child: ReadingWelcomeCard(
+                                            key: const ValueKey(
+                                              'reading-welcome-card',
+                                            ),
+                                            book: _books.firstOrNull,
+                                            onOpen: () =>
+                                                _readBook(_books.first),
+                                            onImport: _importing
+                                                ? null
+                                                : _importBook,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 32),
+                                      ],
                                       Padding(
                                         padding: EdgeInsets.symmetric(
                                           horizontal: _section == 0
@@ -528,19 +637,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      const SizedBox(width: 8),
-      IconButton.filledTonal(
-        key: const ValueKey('theme-toggle'),
-        tooltip: _brightness == Brightness.dark
-            ? 'Светлая тема'
-            : 'Тёмная тема',
-        onPressed: widget.onToggleTheme,
-        icon: Icon(
-          _brightness == Brightness.dark
-              ? Icons.light_mode_outlined
-              : Icons.dark_mode_outlined,
-        ),
-      ),
+      if (_section == 0) ...[
+        const SizedBox(width: 12),
+        if (desktop)
+          FilledButton.tonalIcon(
+            key: const ValueKey('random-book-picker'),
+            onPressed: _showRandomBookPicker,
+            icon: const Icon(Icons.shuffle_rounded, size: 20),
+            label: const Text('Подобрать книгу'),
+          )
+        else
+          IconButton.filledTonal(
+            key: const ValueKey('random-book-picker'),
+            tooltip: 'Подобрать книгу',
+            onPressed: _showRandomBookPicker,
+            icon: const Icon(Icons.shuffle_rounded),
+          ),
+      ],
       if (_section != 0) ...[
         const SizedBox(width: 12),
         if (desktop)
@@ -711,6 +824,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _libraryContent() => [
     TextField(
       controller: _searchController,
+      focusNode: _searchFocus,
       onChanged: (value) => setState(() => _query = value),
       decoration: AppInputStyles.search(
         context,

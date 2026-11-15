@@ -1,17 +1,108 @@
-# flutter_app
+# MYB
 
-A new Flutter project.
+Личная библиотека и читалка TXT/PDF для Android, iOS и macOS.
 
-## Getting Started
+## macOS
 
-This project is a starting point for a Flutter application.
+Требуется macOS 12 или новее, Flutter с Dart 3.13.2+ и полный Xcode из App Store.
+Command Line Tools отдельно от Xcode не позволяют собрать приложение macOS.
 
-A few resources to get you started if this is your first Flutter project:
+После установки Xcode откройте его и завершите первоначальную настройку. Затем:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```sh
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+flutter pub get
+flutter run -d macos
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Проект использует Swift Package Manager для macOS-плагинов.
+
+Сборка приложения:
+
+```sh
+flutter build macos --release
+```
+
+Результат: `build/macos/Build/Products/Release/MYB.app`.
+
+Окно сохраняет размер и положение; минимальная область содержимого — 960 × 640.
+
+| Сочетание | Действие |
+| --- | --- |
+| ⌘O | Открыть TXT/PDF в библиотеке |
+| ⌘F | Поиск книги или автора в библиотеке |
+| ⌘1…⌘5 | Разделы библиотеки |
+| ⌘⇧R | Подобрать случайную книгу |
+| ⌘D | Переключить тему |
+| ← / →, Page Up / Page Down | Страницы в читалке |
+| Esc | Вернуться из читалки |
+
+Команды библиотеки активны на основном экране. Импорт использует стандартный
+диалог macOS и разрешение на чтение выбранного пользователем файла. Локальные
+копии книг, цитаты и прогресс хранятся в данных приложения.
+
+### Обновления приложения
+
+Sparkle 2.10.1 встроен через Swift Package Manager. «MYB → Проверить
+обновления…» и кнопка в шапке открывают стандартное окно проверки,
+скачивания и установки. Sparkle также предлагает включить периодическую
+проверку. Перед перезапуском приложение сохраняет текущую страницу и
+статистику чтения.
+
+Канал: `https://github.com/KarinaAndros/reader_flutter/releases/latest/download/appcast.xml`.
+Пока первый релиз с этим файлом не опубликован, проверка сообщит об ошибке
+загрузки канала. Приватный ключ подписи создан в Связке ключей этого Mac,
+учётная запись `com.example.flutterApp.sparkle`; в приложении хранится только
+публичный ключ. Архивы и сам appcast подписываются Ed25519; Sandbox включён.
+
+Для следующей версии:
+
+1. Увеличить **оба** номера в `pubspec.yaml`, например `1.0.2+3`.
+2. Написать `releases/macos-1.0.2.md`.
+3. Выполнить `bash tool/release_macos.sh` на этом Mac.
+4. Опубликовать обычный GitHub Release `v1.0.2` с готовыми файлами из
+   `build/releases/v1.0.2`: ZIP, `appcast.xml`, `SHA256SUMS`. Релиз должен
+   стать Latest, а тег — указывать на соответствующий исходный код.
+
+Для упаковки уже собранной версии: `bash tool/release_macos.sh --skip-build`.
+Скрипт проверяет версию, ключ, подпись приложения, подписи архива и канала.
+Подписи проверяются встроенным публичным ключом через CryptoKit, без чтения
+приватного ключа. Для отдельной проверки готового пакета:
+
+```sh
+xcrun swift tool/verify_macos_release.swift \
+  /Applications/MYB.app/Contents/Info.plist \
+  build/releases/v1.0.1/appcast.xml \
+  build/releases/v1.0.1/MYB-macOS-1.0.1.zip
+```
+
+Не редактируйте подписанный XML вручную: изменение требует повторной подписи.
+Храните резервную копию ключа безопасно вне репозитория: новые обновления
+должны подписываться тем же ключом, которому доверяет установленное приложение.
+
+Первый релиз готов в `build/releases/v1.0.1`. Для ручной публикации откройте
+https://github.com/KarinaAndros/reader_flutter/releases/new, задайте тег
+`v1.0.1`, название `MYB 1.0.1`, прикрепите `MYB-macOS-1.0.1.zip`,
+`appcast.xml` и `SHA256SUMS`. Отметьте **Set as latest release** и опубликуйте
+обычный релиз, без **This is a pre-release**. Описание можно взять из
+`releases/macos-1.0.1.md`. Актуальные исходники следует отправить в репозиторий
+перед созданием тега. ZIP загружается как есть, без распаковки и переименования.
+
+После публикации откройте MYB → Проверить обновления…: для установленной
+версии 1.0.1 (2) ожидается сообщение об отсутствии новых версий. Полный цикл
+обновления можно проверить, опубликовав следующую подписанную сборку с большим
+номером. Публикация и проверка онлайн-канала пока выполняются пользователем.
+
+Инструкция GitHub: https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository.
+
+## Проверки
+
+```sh
+flutter analyze
+flutter test
+```
+
+Для нативных PDF-тестов можно задать `PDFIUM_PATH`. На Apple Silicon также
+поддерживается библиотека из локального Flutter-кэша сборки, указанная в
+`test/pdf_page_turn_test.dart`.
