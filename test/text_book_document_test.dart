@@ -86,4 +86,34 @@ void main() {
       );
     }
   });
+
+  test('Markdown pagination preserves fenced code, tables and source text', () {
+    const code = '```dart\nvoid main() {\n\n  print("hello");\n}\n```\n\n';
+    const table = '| Имя | Значение |\n| --- | --- |\n| Книга | 1 |\n\n';
+    final text =
+        '# Глава\r\n\r\n${'Абзац **Markdown**.\r\n\r\n' * 110}$code$table';
+    final document = TextBookDocument.fromMarkdownBytes(
+      Uint8List.fromList(utf8.encode(text)),
+    );
+    expect(document.pages.length, greaterThan(1));
+    expect(document.pages.join(), text.replaceAll('\r\n', '\n'));
+    expect(document.pages.where((page) => page.contains(code)), hasLength(1));
+    expect(document.pages.where((page) => page.contains(table)), hasLength(1));
+    final longCode = '~~~~text\n${'длинный код\n\n' * 250}~~~~\n';
+    final longDocument = TextBookDocument.fromMarkdownBytes(
+      Uint8List.fromList(utf8.encode(longCode)),
+    );
+    expect(longDocument.pages, [longCode]);
+  });
+
+  test('Markdown reference links survive pagination and ignore fenced definitions', () {
+    final text =
+        '[ссылка][guide]\n\n${'Абзац.\n\n' * 400}[guide]: https://flutter.dev\n\n```\n[hidden]: https://example.com\n```';
+    final document = TextBookDocument.fromMarkdownBytes(
+      Uint8List.fromList(utf8.encode(text)),
+    );
+    expect(document.pages.length, greaterThan(1));
+    expect(document.referenceDefinitions, '[guide]: https://flutter.dev');
+    expect(document.pages.join(), text);
+  });
 }

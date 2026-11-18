@@ -12,13 +12,13 @@ class MacOSLibraryMenu extends StatelessWidget {
     required this.onPickBook,
     required this.onSelectSection,
     required this.onToggleTheme,
-    required this.onCheckForUpdates,
+    required this.onOpenSettings,
     required this.child,
   });
 
   final bool enabled;
   final VoidCallback? onOpen, onToggleTheme;
-  final VoidCallback? onCheckForUpdates;
+  final VoidCallback? onOpenSettings;
   final VoidCallback onSearch, onPickBook;
   final ValueChanged<int> onSelectSection;
   final Widget child;
@@ -40,8 +40,12 @@ class MacOSLibraryMenu extends StatelessWidget {
               type: PlatformProvidedMenuItemType.about,
             ),
             PlatformMenuItem(
-              label: 'Проверить обновления…',
-              onSelected: onCheckForUpdates,
+              label: 'Настройки…',
+              shortcut: const SingleActivator(
+                LogicalKeyboardKey.comma,
+                meta: true,
+              ),
+              onSelected: enabled ? onOpenSettings : null,
             ),
             PlatformMenuItemGroup(
               members: [
@@ -191,6 +195,8 @@ class MacOSLibraryMenu extends StatelessWidget {
                 ): onPickBook,
                 const SingleActivator(LogicalKeyboardKey.keyD, meta: true):
                     ?onToggleTheme,
+                const SingleActivator(LogicalKeyboardKey.comma, meta: true):
+                    ?onOpenSettings,
                 for (var index = 0; index < librarySections.length; index++)
                   SingleActivator(_sectionKeys[index], meta: true): () =>
                       onSelectSection(index),

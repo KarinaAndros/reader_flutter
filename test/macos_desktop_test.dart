@@ -107,14 +107,14 @@ void main() {
     await openApp(tester);
     await _command(tester, LogicalKeyboardKey.keyO);
     expect(picker.calls, 1);
-    expect(picker.extensions, containsAll(['txt', 'pdf']));
+    expect(picker.extensions, containsAll(['txt', 'pdf', 'md']));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets(
-    'macOS update menu and button invoke Sparkle and handle failures',
+    'macOS settings menu and shortcut expose updates and handle failures',
     (tester) async {
       final calls = <String>[];
       var fail = false;
@@ -125,11 +125,18 @@ void main() {
             return null;
           });
       await openApp(tester);
-      _menuItem(tester, 'Проверить обновления…').onSelected!();
+      expect(find.byTooltip('Проверить обновления'), findsNothing);
+      _menuItem(tester, 'Настройки…').onSelected!();
+      await tester.pumpAndSettle();
+      expect(find.text('Сбросить кэш'), findsOneWidget);
+      await tester.tap(find.text('Проверить обновления'));
       await tester.pumpAndSettle();
       expect(calls, ['checkForUpdates']);
+      await tester.tap(find.byTooltip('Назад в библиотеку'));
+      await tester.pumpAndSettle();
+      await _command(tester, LogicalKeyboardKey.comma);
       fail = true;
-      await tester.tap(find.byTooltip('Проверить обновления'));
+      await tester.tap(find.text('Проверить обновления'));
       await tester.pumpAndSettle();
       expect(calls, ['checkForUpdates', 'checkForUpdates']);
       expect(find.text('Проверка обновлений уже выполняется.'), findsOneWidget);

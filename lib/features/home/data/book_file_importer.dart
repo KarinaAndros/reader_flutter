@@ -13,13 +13,23 @@ class BookFileImporter {
 
   final Future<Directory> Function() _directory;
 
+  Future<void> removeCopy(String path) async {
+    final root = await _directory();
+    final file = File(path);
+    final name = file.uri.pathSegments.last;
+    if (!RegExp(r'^[0-9a-f]{64}\.(pdf|txt|md)$').hasMatch(name) ||
+        path != '${root.path}/books/$name')
+      return;
+    if (await file.exists()) await file.delete();
+  }
+
   Future<LibraryBook> import({
     required String name,
     required Stream<List<int>> bytes,
   }) async {
     final extension = name.split('.').last.toLowerCase();
-    if (!const ['txt', 'pdf'].contains(extension)) {
-      throw const FormatException('Выберите файл TXT или PDF.');
+    if (!const ['txt', 'pdf', 'md'].contains(extension)) {
+      throw const FormatException('Выберите файл TXT, PDF или MD.');
     }
     final root = await _directory();
     final folder = await Directory('${root.path}/books')
@@ -31,15 +41,23 @@ class BookFileImporter {
       final sink = temporary.openWrite();
       try {
         await sink.addStream(bytes);
-      } finally {
-        await sink.close();
+      } catch (_) {
+        try {
+          await sink.close();
+        } catch (_) {
+          // addStream may already have closed the sink. Preserve its error.
+        }
+        rethrow;
       }
+      await sink.close();
       if (await temporary.length() == 0) {
         throw const FormatException('Файл пуст. Выберите другую книгу.');
       }
-      final text = extension == 'txt'
+      final text = extension == 'txt' || extension == 'md'
           ? await compute(
-              TextBookDocument.fromBytes,
+              extension == 'md'
+                  ? TextBookDocument.fromMarkdownBytes
+                  : TextBookDocument.fromBytes,
               await temporary.readAsBytes(),
             )
           : null;
@@ -48,7 +66,7 @@ class BookFileImporter {
       if (!await destination.exists()) await temporary.rename(destination.path);
       final seed = int.parse(digest.substring(0, 8), radix: 16);
       final title = name
-          .replaceFirst(RegExp(r'\.(txt|pdf)$', caseSensitive: false), '')
+          .replaceFirst(RegExp(r'\.(txt|pdf|md)$', caseSensitive: false), '')
           .replaceAll('_', ' ')
           .trim();
       return LibraryBook(

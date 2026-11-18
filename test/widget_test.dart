@@ -20,12 +20,15 @@ void main() {
       expect(find.text('Популярные книги для чтения'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.scrollUntilVisible(
-        find.text('Открыть TXT или PDF'),
+        find.text('Открыть TXT, PDF или MD'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Открыть TXT или PDF').hitTestable(), findsOneWidget);
+      expect(
+        find.text('Открыть TXT, PDF или MD').hitTestable(),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
   }
@@ -118,7 +121,7 @@ void main() {
         findsNothing,
       );
       expect(find.text('Здесь появятся ваши книги'), findsOneWidget);
-      expect(find.text('Открыть TXT или PDF'), findsOneWidget);
+      expect(find.text('Открыть TXT, PDF или MD'), findsOneWidget);
       expect(find.text('Выберите свою историю'), findsNothing);
       expect(find.text('Ваша цель на год'), findsNothing);
       expect(find.text('Ваш ритм'), findsOneWidget);

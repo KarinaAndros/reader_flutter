@@ -93,6 +93,8 @@ void main() {
   ) async {
     await openApp(tester, width: 390);
     final original = accent(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('spotlight-books')));
+    await tester.pumpAndSettle();
     await tester.timedDrag(
       find.byKey(const ValueKey('spotlight-books')),
       const Offset(-120, 0),
@@ -127,10 +129,12 @@ void main() {
       expect(accent(tester), selected);
       expect(
         tester
-            .widget<PageView>(find.byKey(const ValueKey('spotlight-books')))
-            .controller!
-            .page,
-        closeTo(1, .01),
+                .widget<PageView>(find.byKey(const ValueKey('spotlight-books')))
+                .controller!
+                .page!
+                .round() %
+            editorialBooks.length,
+        1,
       );
     }
   });

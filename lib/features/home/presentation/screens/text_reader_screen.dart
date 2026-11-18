@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_app/features/home/data/quote_repository.dart';
 import 'package:flutter_app/features/home/data/text_book_document.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_page_turn.dart';
@@ -31,6 +33,7 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
   int _page = 1;
   double _fontSize = 20;
   double? _scrubPage;
+  bool get _isMarkdown => widget.filePath.toLowerCase().endsWith('.md');
 
   @override
   void initState() {
@@ -42,7 +45,12 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
     setState(() => _error = null);
     try {
       final bytes = await File(widget.filePath).readAsBytes();
-      final document = await compute(TextBookDocument.fromBytes, bytes);
+      final document = await compute(
+        _isMarkdown
+            ? TextBookDocument.fromMarkdownBytes
+            : TextBookDocument.fromBytes,
+        bytes,
+      );
       if (!mounted) return;
       setState(() {
         _document = document;
@@ -54,7 +62,7 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
       setState(
         () => _error = error is FormatException
             ? error.message
-            : 'Не удалось открыть TXT. Попробуйте добавить файл заново.',
+            : 'Не удалось открыть документ. Попробуйте добавить файл заново.',
       );
     }
   }
@@ -63,7 +71,7 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
     if (_document == null) return;
     FocusManager.instance.primaryFocus?.unfocus();
     ContextMenuController.removeAny();
-    _controller.goToPage(page.clamp(1, _document!.pages.length) - 1);
+    _controller.goToPage((page.clamp(1, _document!.pages.length) - 1) ~/ 2);
   }
 
   Future<void> _saveQuote(String text, int page) async {
@@ -159,8 +167,57 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
     );
   }
 
+  Widget _selectionMenu(EditableTextState state, int page) {
+    final value = state.textEditingValue;
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: state.contextMenuAnchors,
+      buttonItems: [
+        if (!value.selection.isCollapsed && value.selection.isValid)
+          ContextMenuButtonItem(
+            label: 'Сохранить цитату',
+            onPressed: () {
+              final text = value.selection.textInside(value.text);
+              ContextMenuController.removeAny();
+              _saveQuote(text, page);
+            },
+          ),
+        ...state.contextMenuButtonItems,
+      ],
+    );
+  }
+
+  Future<void> _openLink(String? href) async {
+    final uri = href == null ? null : Uri.tryParse(href);
+    if (uri == null || !['https', 'http', 'mailto'].contains(uri.scheme)) {
+      return;
+    }
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // Report failures in the reader instead of losing the open document.
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось открыть ссылку.')),
+      );
+    }
+  }
+
+  Widget _spread(BuildContext context, int spread) => BookSpread(
+    left: _buildPage(context, spread * 2),
+    right: spread * 2 + 1 < _document!.pages.length
+        ? _buildPage(context, spread * 2 + 1)
+        : const SizedBox.expand(),
+  );
+
   Widget _buildPage(BuildContext context, int index) {
     final scheme = Theme.of(context).colorScheme;
+    final textStyle = TextStyle(
+      fontSize: _fontSize,
+      height: 1.75,
+      color: scheme.onSurface,
+      fontFamily: 'Georgia',
+    );
     return SingleChildScrollView(
       key: PageStorageKey('text-page-$index'),
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
@@ -168,34 +225,72 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
-          child: SelectableText(
-            _document!.pages[index],
-            key: ValueKey('text-page-content-$index'),
-            style: TextStyle(
-              fontSize: _fontSize,
-              height: 1.75,
-              color: scheme.onSurface,
-              fontFamily: 'Georgia',
-            ),
-            contextMenuBuilder: (context, state) {
-              final value = state.textEditingValue;
-              return AdaptiveTextSelectionToolbar.buttonItems(
-                anchors: state.contextMenuAnchors,
-                buttonItems: [
-                  ...state.contextMenuButtonItems,
-                  if (!value.selection.isCollapsed && value.selection.isValid)
-                    ContextMenuButtonItem(
-                      label: 'Сохранить цитату',
-                      onPressed: () {
-                        final text = value.selection.textInside(value.text);
-                        ContextMenuController.removeAny();
-                        _saveQuote(text, index + 1);
-                      },
-                    ),
-                ],
-              );
-            },
-          ),
+          child: _isMarkdown
+              ? MarkdownBody(
+                  key: ValueKey('markdown-page-content-$index'),
+                  data:
+                      '${_document!.pages[index]}\n\n${_document!.referenceDefinitions}',
+                  selectable: true,
+                  fitContent: false,
+                  onTapLink: (_, href, _) => _openLink(href),
+                  contextMenuBuilder: (_, state) =>
+                      _selectionMenu(state, index + 1),
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                      .copyWith(
+                        p: textStyle,
+                        h1: textStyle.copyWith(
+                          fontSize: _fontSize * 1.6,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                        ),
+                        h2: textStyle.copyWith(
+                          fontSize: _fontSize * 1.35,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                        ),
+                        h3: textStyle.copyWith(
+                          fontSize: _fontSize * 1.15,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                        ),
+                        h4: textStyle.copyWith(fontWeight: FontWeight.bold),
+                        h5: textStyle.copyWith(fontWeight: FontWeight.bold),
+                        h6: textStyle.copyWith(fontWeight: FontWeight.bold),
+                        code: textStyle.copyWith(
+                          fontFamily: 'monospace',
+                          fontSize: _fontSize * .85,
+                          height: 1.5,
+                        ),
+                        a: TextStyle(
+                          color: scheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                        blockquote: textStyle,
+                        blockquoteDecoration: BoxDecoration(
+                          color: scheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: scheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        tableBody: textStyle.copyWith(
+                          fontSize: _fontSize * .85,
+                        ),
+                        tableHead: textStyle.copyWith(
+                          fontSize: _fontSize * .85,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        listBullet: textStyle,
+                      ),
+                )
+              : SelectableText(
+                  _document!.pages[index],
+                  key: ValueKey('text-page-content-$index'),
+                  style: textStyle,
+                  contextMenuBuilder: (_, state) =>
+                      _selectionMenu(state, index + 1),
+                ),
         ),
       ),
     );
@@ -269,18 +364,19 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
           : BookPageTurn(
               key: const ValueKey('text-reader-pages'),
               controller: _controller,
-              page: _page - 1,
-              pageCount: count,
+              spread: true,
+              page: (_page - 1) ~/ 2,
+              pageCount: (count + 1) ~/ 2,
               onTurnStart: () {
                 FocusManager.instance.primaryFocus?.unfocus();
                 ContextMenuController.removeAny();
               },
               onPageChanged: (index) {
-                setState(() => _page = index + 1);
+                setState(() => _page = index * 2 + 1);
                 widget.onProgressChanged?.call(_page, count);
               },
-              previewBuilder: _buildPage,
-              child: _buildPage(context, _page - 1),
+              previewBuilder: _spread,
+              child: _spread(context, (_page - 1) ~/ 2),
             ),
       bottomNavigationBar: count == 0
           ? null
@@ -293,7 +389,9 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
                     children: [
                       IconButton(
                         tooltip: 'Предыдущая страница',
-                        onPressed: _page > 1 ? () => _goTo(_page - 1) : null,
+                        onPressed: (_page - 1) ~/ 2 > 0
+                            ? () => _goTo(_page - 2)
+                            : null,
                         icon: const Icon(Icons.chevron_left_rounded),
                       ),
                       Expanded(
@@ -315,15 +413,18 @@ class _TextReaderScreenState extends State<TextReaderScreen> {
                       ),
                       IconButton(
                         tooltip: 'Следующая страница',
-                        onPressed: _page < count
-                            ? () => _goTo(_page + 1)
+                        onPressed: (_page - 1) ~/ 2 < (count - 1) ~/ 2
+                            ? () => _goTo(_page + 2)
                             : null,
                         icon: const Icon(Icons.chevron_right_rounded),
                       ),
                     ],
                   ),
                   Text(
-                    'Страница $_page из $count',
+                    spreadLabel(
+                      (_scrubPage ?? _page.toDouble()).round(),
+                      count,
+                    ),
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,

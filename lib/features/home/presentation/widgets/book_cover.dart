@@ -53,26 +53,8 @@ class BookCover extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (book.isPdf)
-                      PdfDocumentViewBuilder.file(
-                        book.filePath!,
-                        loadingBuilder: (_) => fallback,
-                        errorBuilder: (_, error, stackTrace) => fallback,
-                        builder: (context, document) =>
-                            document == null || document.pages.isEmpty
-                            ? fallback
-                            : ColoredBox(
-                                color: Colors.white,
-                                child: PdfPageView(
-                                  document: document,
-                                  pageNumber: 1,
-                                  maximumDpi: 100,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                      )
+                    if (book.isLocal && book.isPdf)
+                      _PdfBookCover(path: book.filePath!, fallback: fallback)
                     else
                       fallback,
                     const IgnorePointer(
@@ -123,6 +105,53 @@ class BookCover extends StatelessWidget {
   }
 }
 
+class _PdfBookCover extends StatefulWidget {
+  const _PdfBookCover({required this.path, required this.fallback});
+  final String path;
+  final Widget fallback;
+
+  @override
+  State<_PdfBookCover> createState() => _PdfBookCoverState();
+}
+
+class _PdfBookCoverState extends State<_PdfBookCover> {
+  late PdfDocumentRefFile _reference;
+
+  @override
+  void initState() {
+    super.initState();
+    _reference = PdfDocumentRefFile(widget.path);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PdfBookCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      _reference = PdfDocumentRefFile(widget.path);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PdfDocumentViewBuilder(
+    // Keep the reference stable: replacing it on each parent animation removes
+    // the last listener and can dispose/reopen the same PDF over and over.
+    documentRef: _reference,
+    loadingBuilder: (_) => widget.fallback,
+    errorBuilder: (_, error, stackTrace) => widget.fallback,
+    builder: (context, document) => document == null || document.pages.isEmpty
+        ? widget.fallback
+        : ColoredBox(
+            color: Colors.white,
+            child: PdfPageView(
+              document: document,
+              pageNumber: 1,
+              maximumDpi: 100,
+              decoration: const BoxDecoration(color: Colors.white),
+            ),
+          ),
+  );
+}
+
 class _IllustratedCover extends StatelessWidget {
   const _IllustratedCover({required this.book});
   final LibraryBook book;
@@ -145,7 +174,7 @@ class _IllustratedCover extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               CustomPaint(
-                painter: book.isLocal
+                painter: book.coverSeed != null || book.isLocal
                     ? _PersonalCoverArt(
                         book.coverSeed ?? book.coverStyle,
                         palette[2],
@@ -179,16 +208,7 @@ class _IllustratedCover extends StatelessWidget {
                     ),
                     SizedBox(height: width * .09),
                     Text(
-                      book.isLocal
-                          ? book.title
-                          : switch (book.coverStyle) {
-                              0 => 'Маленький\nпринц',
-                              1 => 'Мастер и\nМаргарита',
-                              3 => 'Норвежский\nлес',
-                              4 => 'Вино из\nодуванчиков',
-                              5 => 'Старик\nи море',
-                              _ => book.title,
-                            },
+                      book.title,
                       maxLines: book.isLocal ? 4 : 3,
                       overflow: TextOverflow.ellipsis,
                       textScaler: TextScaler.noScaling,
@@ -214,7 +234,7 @@ class _IllustratedCover extends StatelessWidget {
                     const Spacer(),
                     if (book.isLocal)
                       Text(
-                        book.isText ? 'TXT' : 'PDF',
+                        book.formatLabel,
                         textScaler: TextScaler.noScaling,
                         style: TextStyle(
                           color: palette[2],

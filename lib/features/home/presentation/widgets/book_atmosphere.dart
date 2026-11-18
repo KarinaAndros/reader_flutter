@@ -97,10 +97,12 @@ class _ColorBucket {
 class BookAtmosphereResolver {
   final _cache = <String, Future<BookAtmosphere>>{};
 
+  void clearCache() => _cache.clear();
+
   Future<BookAtmosphere> resolve(LibraryBook book) =>
       _cache.putIfAbsent(book.id, () async {
         final fallback = BookAtmosphere.forBook(book);
-        if (!book.isPdf) return fallback;
+        if (!book.isLocal || !book.isPdf) return fallback;
         PdfDocument? document;
         PdfImage? image;
         try {

@@ -184,7 +184,9 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                                 ),
                                 onTap: () {
                                   Navigator.pop(sheetContext);
-                                  _pageTurn.goToPage(quote.pageNumber - 1);
+                                  _pageTurn.goToPage(
+                                    (quote.pageNumber - 1) ~/ 2,
+                                  );
                                 },
                                 trailing: IconButton(
                                   tooltip: 'Удалить цитату',
@@ -210,59 +212,75 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
     );
   }
 
+  Rect _spreadRect(int index) {
+    final pages = controller.layout.pageLayouts;
+    final left = pages[index * 2];
+    final spine = pages.length > index * 2 + 1
+        ? pages[index * 2 + 1].left
+        : left.right;
+    final half = pages.length > index * 2 + 1
+        ? (spine - left.left).clamp(pages[index * 2 + 1].width, double.infinity)
+        : left.width;
+    return Rect.fromLTRB(spine - half, left.top, spine + half, left.bottom);
+  }
+
+  Future<void> _openSpread(int index) async {
+    if (!controller.isReady || _pageCount == 0) return;
+    await controller.goToArea(
+      rect: _spreadRect(index),
+      anchor: PdfPageAnchor.all,
+      duration: Duration.zero,
+    );
+    if (!mounted) return;
+    setState(() => _page = index * 2 + 1);
+    widget.onProgressChanged?.call(_page, _pageCount);
+  }
+
   Widget _buildPagePreview(BuildContext context, int index) {
     if (!controller.isReady || _document == null) {
       return const SizedBox.shrink();
     }
-    final matrix = controller.calcMatrixForClampedToNearestBoundary(
-      controller.calcMatrixForPage(
-        pageNumber: index + 1,
-        anchor: PdfPageAnchor.top,
-      ),
-      viewSize: controller.viewSize,
+    final matrix = controller.calcMatrixForArea(
+      rect: _spreadRect(index),
+      anchor: PdfPageAnchor.all,
     );
-    final rect = MatrixUtils.transformRect(
-      matrix,
-      controller.layout.pageLayouts[index],
-    );
-    final colors = Theme.of(context).colorScheme;
-    return ColoredBox(
-      color: Color.alphaBlend(
-        colors.primary.withValues(alpha: .035),
-        colors.surfaceContainerLowest,
-      ),
-      child: Stack(
-        children: [
+    return Stack(
+      children: [
+        for (var i = index * 2; i < _pageCount && i < index * 2 + 2; i++)
           Positioned.fromRect(
-            rect: rect,
+            rect: MatrixUtils.transformRect(
+              matrix,
+              controller.layout.pageLayouts[i],
+            ),
             child: PdfPageView(
               document: _document,
-              pageNumber: index + 1,
+              pageNumber: i + 1,
               maximumDpi: 144,
               decoration: const BoxDecoration(color: Colors.white),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
   PdfPageLayout _horizontalLayout(List<PdfPage> pages, PdfViewerParams params) {
-    final height = pages.fold<double>(
-      0,
-      (height, page) => page.height > height ? page.height : height,
-    );
+    final height = pages.fold<double>(0, (h, p) => p.height > h ? p.height : h);
     final layouts = <Rect>[];
-    var x = params.margin;
-    for (final page in pages) {
-      final width = page.width * height / page.height;
-      layouts.add(Rect.fromLTWH(x, params.margin, width, height));
-      x += width + params.margin * 2;
+    // Leave space around each spread so neighboring sheets stay outside the viewport.
+    var x = height * 4;
+    for (var i = 0; i < pages.length; i += 2) {
+      final leftWidth = pages[i].width * height / pages[i].height;
+      final rightWidth = i + 1 < pages.length
+          ? pages[i + 1].width * height / pages[i + 1].height
+          : leftWidth;
+      final half = leftWidth > rightWidth ? leftWidth : rightWidth;
+      final spine = x + half;
+      layouts.add(Rect.fromLTWH(spine - leftWidth, 0, leftWidth, height));
+      if (i + 1 < pages.length)
+        layouts.add(Rect.fromLTWH(spine, 0, rightWidth, height));
+      x += half * 2 + height * 4;
     }
-    return PdfPageLayout(
-      pageLayouts: layouts,
-      documentSize: Size(x - params.margin, height + params.margin * 2),
-    );
+    return PdfPageLayout(pageLayouts: layouts, documentSize: Size(x, height));
   }
 
   @override
@@ -358,21 +376,22 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
             borderRadius: BorderRadius.circular(12),
             child: BookPageTurn(
               controller: _pageTurn,
-              page: _page > 0 ? _page - 1 : 0,
-              pageCount: _pageCount,
+              spread: true,
+              page: (_page - 1) ~/ 2,
+              pageCount: (_pageCount + 1) ~/ 2,
               overlayGestures: true,
               paperColor: Colors.white,
+              sheetBounds: () => MatrixUtils.transformRect(
+                controller.value,
+                _spreadRect((_page - 1) ~/ 2),
+              ),
               onTurnStart: () {
                 ContextMenuController.removeAny();
                 if (controller.isReady) {
                   controller.textSelectionDelegate.clearTextSelection();
                 }
               },
-              onPageChanged: (index) => controller.goToPage(
-                pageNumber: index + 1,
-                anchor: PdfPageAnchor.top,
-                duration: Duration.zero,
-              ),
+              onPageChanged: _openSpread,
               previewBuilder: _buildPagePreview,
               child: PdfViewer.file(
                 widget.filePath,
@@ -467,16 +486,9 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                       _pageCount = document.pages.length;
                       _page = controller.pageNumber ?? 1;
                     });
-                    widget.onProgressChanged?.call(_page, _pageCount);
-                  },
-                  onPageChanged: (page) {
-                    if (!mounted) return;
-                    setState(() {
-                      _page = page ?? 1;
-                    });
-                    if (_pageCount > 0) {
-                      widget.onProgressChanged?.call(_page, _pageCount);
-                    }
+                    _openSpread(
+                      (widget.initialPage.clamp(1, _pageCount) - 1) ~/ 2,
+                    );
                   },
                 ),
               ),
@@ -549,7 +561,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                             tooltip: 'Предыдущая страница',
                             icon: const Icon(Icons.chevron_left_rounded),
                             onPressed: _page > 1
-                                ? () => _pageTurn.goToPage(_page - 2)
+                                ? () => _pageTurn.goToPage((_page - 1) ~/ 2 - 1)
                                 : null,
                           ),
                           Expanded(
@@ -567,7 +579,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                                         setState(() => _scrubPage = value)
                                   : null,
                               onChangeEnd: (value) {
-                                _pageTurn.goToPage(value.round() - 1);
+                                _pageTurn.goToPage((value.round() - 1) ~/ 2);
                                 setState(() => _scrubPage = null);
                               },
                             ),
@@ -575,8 +587,8 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                           IconButton(
                             tooltip: 'Следующая страница',
                             icon: const Icon(Icons.chevron_right_rounded),
-                            onPressed: _page < _pageCount
-                                ? () => _pageTurn.goToPage(_page)
+                            onPressed: _page + 1 < _pageCount
+                                ? () => _pageTurn.goToPage((_page - 1) ~/ 2 + 1)
                                 : null,
                           ),
                         ],
@@ -587,7 +599,10 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
                           vertical: 2,
                         ),
                         child: Text(
-                          'Страница ${(_scrubPage ?? _page.toDouble()).round()} из $_pageCount',
+                          spreadLabel(
+                            (_scrubPage ?? _page.toDouble()).round(),
+                            _pageCount,
+                          ),
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 12,

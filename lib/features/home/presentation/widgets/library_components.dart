@@ -283,7 +283,7 @@ class AddBookButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(100),
       child: FloatingActionButton(
         key: const ValueKey('add-book-button'),
-        tooltip: 'Открыть TXT или PDF',
+        tooltip: 'Открыть TXT, PDF или MD',
         onPressed: onPressed,
         backgroundColor: Colors.transparent,
         foregroundColor: scheme.primary,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/core/app_updates.dart';
 import 'package:flutter_app/features/home/data/book_library.dart';
@@ -116,14 +117,17 @@ void main() {
     picker.file = _PhoneFile(file, 'Обновление.TXT');
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Открыть TXT или PDF'));
+    await tester.tap(find.byTooltip('Открыть TXT, PDF или MD'));
     await pumpIo(
       tester,
       () => find.byType(SelectableText).evaluate().isNotEmpty,
     );
     await tester.tap(find.byTooltip('Следующая страница'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Страница 2 из'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'Страниц(?:а 3|ы 3–4) из')),
+      findsOneWidget,
+    );
 
     const codec = StandardMethodCodec();
     Object? result;
@@ -140,7 +144,7 @@ void main() {
     );
     await pumpIo(tester, () => replied);
     expect(result, isNull);
-    expect((await BookLibrary().load()).single.page, 2);
+    expect((await BookLibrary().load()).single.page, 3);
     expect(
       (await ReadingActivityRepository().load()).series(1).single.pages,
       2,
@@ -150,6 +154,90 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets(
+    'iOS Markdown imports, renders formatting, saves a quote and resumes',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 900);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final file = File('${directory.path}/Мои_заметки.MD')
+        ..writeAsStringSync(
+          '# Первая глава\n\nТекст **жирным** и *курсивом*.\n\n- Первый пункт\n- Второй пункт\n\n```dart\nprint("hello");\n```\n\n${'Следующий абзац.\n\n' * 240}',
+        );
+      picker.file = _PhoneFile(file, 'Мои_заметки.MD');
+      await tester.pumpWidget(const MyApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Открыть TXT, PDF или MD'));
+      await pumpIo(
+        tester,
+        () => find.byType(MarkdownBody).evaluate().isNotEmpty,
+      );
+      expect(picker.extensions, contains('md'));
+      expect(find.text('Первая глава'), findsOneWidget);
+      expect(find.text('# Первая глава'), findsNothing);
+      expect(find.byType(BookReaderScreen), findsNothing);
+      final heading = find.byType(SelectableText).first;
+      await tester.longPressAt(
+        tester.getTopLeft(heading) + const Offset(35, 15),
+      );
+      await tester.pumpAndSettle();
+      final editable = tester.state<EditableTextState>(
+        find.byType(EditableText).first,
+      );
+      editable.userUpdateTextEditingValue(
+        editable.textEditingValue.copyWith(
+          selection: const TextSelection(baseOffset: 0, extentOffset: 6),
+        ),
+        SelectionChangedCause.longPress,
+      );
+      editable.showToolbar();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Сохранить цитату'));
+      await tester.pumpAndSettle();
+      expect((await QuoteRepository().loadAll()).single.text, 'Первая');
+      await tester.tap(find.byTooltip('Следующая страница'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(RegExp(r'Страниц(?:а 3|ы 3–4) из')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('Назад в библиотеку'));
+      await pumpIo(
+        tester,
+        () =>
+            find.byType(BookSpotlight).evaluate().isNotEmpty &&
+            tester
+                    .widget<BookSpotlight>(find.byType(BookSpotlight))
+                    .books
+                    .first
+                    .page ==
+                3,
+      );
+      final saved = (await BookLibrary().load()).single;
+      expect(saved.isMarkdown, isTrue);
+      expect(saved.page, 3);
+      expect(saved.filePath, isNot(file.path));
+      expect(find.text('MD'), findsWidgets);
+      await tester.runAsync(() => file.delete());
+      await tester.ensureVisible(find.text('Продолжить'));
+      await tester.tap(find.text('Продолжить'));
+      await pumpIo(
+        tester,
+        () =>
+            find.byType(MarkdownBody).evaluate().isNotEmpty &&
+            find
+                .textContaining(RegExp(r'Страниц(?:а 3|ы 3–4) из'))
+                .evaluate()
+                .isNotEmpty,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets(
     'Phone TXT imports, saves a quote and resumes from the saved page',
@@ -165,12 +253,12 @@ void main() {
       picker.file = _PhoneFile(file, 'Моя_история.TXT');
       await tester.pumpWidget(const MyApp());
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Открыть TXT или PDF'));
+      await tester.tap(find.byTooltip('Открыть TXT, PDF или MD'));
       await pumpIo(
         tester,
         () => find.byType(SelectableText).evaluate().isNotEmpty,
       );
-      expect(picker.extensions, containsAll(['txt', 'pdf']));
+      expect(picker.extensions, containsAll(['txt', 'pdf', 'md']));
       expect(find.byType(TextReaderScreen), findsOneWidget);
       expect(find.byType(BookReaderScreen), findsNothing);
       await tester.longPressAt(
@@ -199,7 +287,10 @@ void main() {
       expect((await QuoteRepository().loadAll()).single.text, 'Однажды');
       await tester.tap(find.byTooltip('Следующая страница'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Страница 2 из'), findsOneWidget);
+      expect(
+        find.textContaining(RegExp(r'Страниц(?:а 3|ы 3–4) из')),
+        findsOneWidget,
+      );
       await tester.tap(find.byTooltip('Назад в библиотеку'));
       await pumpIo(
         tester,
@@ -210,10 +301,10 @@ void main() {
                     .books
                     .first
                     .page ==
-                2,
+                3,
       );
       final saved = (await BookLibrary().load()).single;
-      expect(saved.page, 2);
+      expect(saved.page, 3);
       expect(saved.coverSeed, isNotNull);
       expect(
         (await ReadingActivityRepository().load()).series(1).single.pages,
@@ -233,7 +324,10 @@ void main() {
         tester,
         () =>
             find.byType(TextReaderScreen).evaluate().isNotEmpty &&
-            find.textContaining('Страница 2 из').evaluate().isNotEmpty,
+            find
+                .textContaining(RegExp(r'Страниц(?:а 3|ы 3–4) из'))
+                .evaluate()
+                .isNotEmpty,
       );
       await tester.tap(find.byTooltip('Назад в библиотеку'));
       await tester.pumpAndSettle();
@@ -261,7 +355,7 @@ void main() {
       );
       await tester.pumpWidget(const MyApp());
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Открыть TXT или PDF'));
+      await tester.tap(find.byTooltip('Открыть TXT, PDF или MD'));
       await pumpIo(
         tester,
         () => find.text('Страница 1 из 1').evaluate().isNotEmpty,

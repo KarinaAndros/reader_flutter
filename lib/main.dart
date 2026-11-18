@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/core/theme/app_theme.dart';
+import 'package:flutter_app/features/home/data/book_catalog_repository.dart';
+import 'package:flutter_app/features/home/data/book_download_service.dart';
 import 'package:flutter_app/features/home/presentation/screens/home_screen.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,7 +21,10 @@ void main() async {
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.catalog, this.downloads});
+
+  final BookCatalogRepository? catalog;
+  final BookDownloadService? downloads;
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -75,7 +80,11 @@ class _MyAppState extends State<MyApp> {
     themeAnimationDuration: MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 650),
-    home: HomeScreen(onToggleTheme: _toggleTheme),
+    home: HomeScreen(
+      onToggleTheme: _toggleTheme,
+      catalog: widget.catalog,
+      downloads: widget.downloads,
+    ),
     builder: (context, child) {
       final theme = Theme.of(context);
       final dark = theme.brightness == Brightness.dark;

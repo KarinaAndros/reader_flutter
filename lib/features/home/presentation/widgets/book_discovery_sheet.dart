@@ -286,11 +286,11 @@ class _BookDiscoverySheetState extends State<BookDiscoverySheet> {
                         key: const ValueKey('open-picked-book'),
                         onPressed: () => widget.onOpen(selection),
                         icon: Icon(
-                          selection.isLocal
+                          selection.canRead
                               ? Icons.menu_book_rounded
                               : Icons.info_outline_rounded,
                         ),
-                        label: Text(selection.isLocal ? 'Читать' : 'О книге'),
+                        label: Text(selection.canRead ? 'Читать' : 'О книге'),
                       ),
                     ],
                   ),

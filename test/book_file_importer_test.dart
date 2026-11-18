@@ -20,6 +20,23 @@ void main() {
   tearDown(() => directory.delete(recursive: true));
 
   test(
+    'Removal deletes only the private copy and tolerates a missing file',
+    () async {
+      final source = File('${directory.path}/original.txt')
+        ..writeAsStringSync('Сохранить оригинал');
+      final book = await importer.import(
+        name: 'original.txt',
+        bytes: source.openRead(),
+      );
+      await importer.removeCopy(source.path);
+      await importer.removeCopy(book.filePath!);
+      await importer.removeCopy(book.filePath!);
+      expect(await File(book.filePath!).exists(), isFalse);
+      expect(await source.exists(), isTrue);
+    },
+  );
+
+  test(
     'TXT is copied, deduplicated and keeps its cover and reading position',
     () async {
       final source = await File('${directory.path}/source.TXT')
@@ -74,6 +91,38 @@ void main() {
       expect(book.isText, isFalse);
       expect(book.coverSeed, isNotNull);
       expect(await File(book.filePath!).readAsBytes(), bytes);
+    },
+  );
+
+  test(
+    'Markdown imports case-insensitively, deduplicates and restores progress',
+    () async {
+      final content =
+          '# Документ\n\n${'Параграф **жирным** и `код`.\n\n' * 140}';
+      final book = await importer.import(
+        name: 'Мои_заметки.MD',
+        bytes: Stream.value(utf8.encode(content)),
+      );
+      final duplicate = await importer.import(
+        name: 'Копия.md',
+        bytes: Stream.value(utf8.encode(content)),
+      );
+      expect(book.id, duplicate.id);
+      expect(book.title, 'Мои заметки');
+      expect(book.isMarkdown, isTrue);
+      expect(book.isText, isTrue);
+      expect(book.isPdf, isFalse);
+      expect(book.formatLabel, 'MD');
+      expect(book.pageCount, greaterThan(1));
+      expect(await File(book.filePath!).readAsString(), content);
+      await BookLibrary().save([book.withProgress(2, book.pageCount)]);
+      final restored = (await BookLibrary().load()).single;
+      expect(restored.isMarkdown, isTrue);
+      expect(restored.page, 2);
+      await expectLater(
+        importer.import(name: 'binary.md', bytes: Stream.value([0, 1, 2])),
+        throwsFormatException,
+      );
     },
   );
 

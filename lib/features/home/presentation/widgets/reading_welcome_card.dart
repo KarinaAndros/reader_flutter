@@ -45,7 +45,7 @@ class ReadingWelcomeCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 currentBook == null
-                    ? 'Здесь появится последний открытый документ. Откройте TXT или PDF, чтобы начать чтение.'
+                    ? 'Здесь появится последний открытый документ. Откройте TXT, PDF или MD, чтобы начать чтение.'
                     : currentBook.title,
                 style: TextStyle(
                   color: currentBook == null

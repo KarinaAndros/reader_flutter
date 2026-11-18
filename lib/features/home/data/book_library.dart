@@ -12,6 +12,7 @@ class LibraryBook {
     required this.coverStyle,
     this.genre = '',
     this.filePath,
+    this.downloadUrl,
     this.page = 1,
     this.pageCount = 0,
     this.coverSeed,
@@ -25,13 +26,24 @@ class LibraryBook {
   final String description;
   final int coverStyle;
   final String? filePath;
+  final String? downloadUrl;
   final int page;
   final int pageCount;
   final int? coverSeed;
 
   bool get isLocal => filePath != null;
-  bool get isText => filePath?.toLowerCase().endsWith('.txt') ?? false;
-  bool get isPdf => filePath?.toLowerCase().endsWith('.pdf') ?? false;
+  bool get canDownload => downloadUrl != null;
+  bool get canRead => isLocal || canDownload;
+  String get _extensionPath =>
+      (filePath ?? Uri.tryParse(downloadUrl ?? '')?.path ?? '').toLowerCase();
+  bool get isMarkdown => _extensionPath.endsWith('.md');
+  bool get isText => isMarkdown || _extensionPath.endsWith('.txt');
+  bool get isPdf => _extensionPath.endsWith('.pdf');
+  String get formatLabel => isMarkdown
+      ? 'MD'
+      : isPdf
+      ? 'PDF'
+      : 'TXT';
   double get progress => pageCount == 0 ? 0 : (page / pageCount).clamp(0, 1);
 
   LibraryBook withProgress(int page, int count) => LibraryBook(
@@ -43,6 +55,7 @@ class LibraryBook {
     description: description,
     coverStyle: coverStyle,
     filePath: filePath,
+    downloadUrl: downloadUrl,
     page: page,
     pageCount: count,
     coverSeed: coverSeed,
@@ -57,6 +70,7 @@ class LibraryBook {
     'description': description,
     'coverStyle': coverStyle,
     'filePath': filePath,
+    'downloadUrl': downloadUrl,
     'page': page,
     'pageCount': pageCount,
     'coverSeed': coverSeed,
@@ -71,6 +85,7 @@ class LibraryBook {
     description: json['description'] as String,
     coverStyle: json['coverStyle'] as int,
     filePath: json['filePath'] as String?,
+    downloadUrl: json['downloadUrl'] as String?,
     page: json['page'] as int? ?? 1,
     pageCount: json['pageCount'] as int? ?? 0,
     coverSeed: json['coverSeed'] as int?,

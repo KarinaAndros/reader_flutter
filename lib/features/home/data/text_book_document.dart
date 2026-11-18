@@ -3,19 +3,25 @@ import 'dart:typed_data';
 
 /// Stable text sections keep saved positions independent of screen/font size.
 class TextBookDocument {
-  const TextBookDocument(this.pages);
+  const TextBookDocument(this.pages, {this.referenceDefinitions = ''});
   final List<String> pages;
+  final String referenceDefinitions;
 
-  static TextBookDocument fromBytes(Uint8List bytes) {
+  static String _readText(Uint8List bytes) {
     final text = decode(bytes).replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     if (text.trim().isEmpty) {
       throw const FormatException('В файле нет текста для чтения.');
     }
     if (RegExp(r'[\x00-\x08\x0B\x0E-\x1F]').hasMatch(text)) {
       throw const FormatException(
-        'Не удалось прочитать текст. Выберите файл TXT.',
+        'Не удалось прочитать текст. Выберите файл TXT или MD.',
       );
     }
+    return text;
+  }
+
+  static TextBookDocument fromBytes(Uint8List bytes) {
+    final text = _readText(bytes);
     const sectionLength = 1800;
     final pages = <String>[];
     var start = 0;
@@ -34,6 +40,56 @@ class TextBookDocument {
       start = end;
     }
     return TextBookDocument(pages);
+  }
+
+  /// Split Markdown between blocks, preserving code fences and tables even
+  /// when a block is longer than a normal page. Such blocks scroll in-page.
+  static TextBookDocument fromMarkdownBytes(Uint8List bytes) {
+    final text = _readText(bytes);
+    final pages = <String>[];
+    final definitions = <String>[];
+    var page = StringBuffer();
+    var block = StringBuffer();
+    String? fence;
+    var fenceLength = 0;
+    final fencePattern = RegExp(r'^ {0,3}(`{3,}|~{3,})(.*)$');
+    final referencePattern = RegExp(r'^ {0,3}\[[^\]\n]+\]:\s*\S');
+
+    void flushBlock() {
+      if (block.isEmpty) return;
+      if (page.isNotEmpty && page.length + block.length > 1800) {
+        pages.add(page.toString());
+        page = StringBuffer();
+      }
+      page.write(block);
+      block = StringBuffer();
+    }
+
+    for (final match in RegExp(r'[^\n]*\n|[^\n]+$').allMatches(text)) {
+      final line = match.group(0)!;
+      final marker = fencePattern.firstMatch(line.trimRight());
+      if (fence == null) {
+        if (marker != null) {
+          fence = marker.group(1)![0];
+          fenceLength = marker.group(1)!.length;
+        } else if (referencePattern.hasMatch(line)) {
+          definitions.add(line.trimRight());
+        }
+      } else if (marker != null &&
+          marker.group(1)![0] == fence &&
+          marker.group(1)!.length >= fenceLength &&
+          marker.group(2)!.trim().isEmpty) {
+        fence = null;
+      }
+      block.write(line);
+      if (fence == null && line.trim().isEmpty) flushBlock();
+    }
+    flushBlock();
+    if (page.isNotEmpty) pages.add(page.toString());
+    return TextBookDocument(
+      pages,
+      referenceDefinitions: definitions.join('\n'),
+    );
   }
 
   static String decode(Uint8List bytes) {

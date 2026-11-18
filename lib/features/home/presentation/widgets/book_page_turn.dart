@@ -8,6 +8,49 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+String spreadLabel(int page, int count) {
+  final left = (page - 1) ~/ 2 * 2 + 1;
+  return left < count
+      ? 'Страницы $left–${left + 1} из $count'
+      : 'Страница $left из $count';
+}
+
+class BookSpread extends StatelessWidget {
+  const BookSpread({super.key, required this.left, required this.right});
+  final Widget left, right;
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      Row(
+        textDirection: TextDirection.ltr,
+        children: [
+          Expanded(child: left),
+          Expanded(child: right),
+        ],
+      ),
+      Center(
+        child: IgnorePointer(
+          child: Container(
+            width: 14,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.transparent,
+                  Color(0x24000000),
+                  Color(0x09000000),
+                  Colors.transparent,
+                ],
+                stops: [0, .48, .55, 1],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
 class BookPageTurnController {
   _BookPageTurnState? _state;
 
@@ -26,7 +69,9 @@ class BookPageTurn extends StatefulWidget {
     required this.child,
     this.onTurnStart,
     this.paperColor,
+    this.sheetBounds,
     this.overlayGestures = false,
+    this.spread = false,
   });
 
   final BookPageTurnController controller;
@@ -35,7 +80,8 @@ class BookPageTurn extends StatefulWidget {
   final IndexedWidgetBuilder previewBuilder;
   final VoidCallback? onTurnStart;
   final Color? paperColor;
-  final bool overlayGestures;
+  final Rect Function()? sheetBounds;
+  final bool overlayGestures, spread;
   final Widget child;
 
   @override
@@ -47,6 +93,7 @@ class _BookPageTurnState extends State<BookPageTurn>
   final _boundaryKey = GlobalKey();
   late final _animation = AnimationController(vsync: this);
   ui.Image? _snapshot;
+  Rect? _sheetBounds;
   int? _target;
   bool _preparing = false;
   bool _programmatic = false;
@@ -108,6 +155,9 @@ class _BookPageTurnState extends State<BookPageTurn>
             MediaQuery.devicePixelRatioOf(context),
             1600 / math.max(_size.width, _size.height),
           );
+          _sheetBounds = widget.sheetBounds?.call().intersect(
+            Offset.zero & _size,
+          );
           snapshot = boundary.toImageSync(pixelRatio: ratio);
         } on FlutterError {
           // A reader can still change pages when its surface cannot be captured.
@@ -131,6 +181,15 @@ class _BookPageTurnState extends State<BookPageTurn>
     if (widget.pageCount == 0) return;
     final target = page.clamp(0, widget.pageCount - 1);
     if (target == widget.page) return;
+    if (widget.spread && !_reduceMotion && (target - widget.page).abs() == 1) {
+      _programmatic = true;
+      try {
+        if (await _prepare(target)) await _finish(true);
+      } finally {
+        _programmatic = false;
+      }
+      return;
+    }
     _programmatic = true;
     try {
       widget.onTurnStart?.call();
@@ -278,6 +337,8 @@ class _BookPageTurnState extends State<BookPageTurn>
                       builder: (context, _) => CustomPaint(
                         painter: PaperCurlPainter(
                           image: snapshot,
+                          bounds: _sheetBounds,
+                          spread: widget.spread,
                           progress: _animation.value,
                           forward: _forward,
                           fingerY: _fingerY,
@@ -375,6 +436,8 @@ class _PageSwipeRecognizer extends HorizontalDragGestureRecognizer {
 /// Curves the turning edge and draws the reverse of the sheet over the next page.
 class PaperCurlPainter extends CustomPainter {
   const PaperCurlPainter({
+    this.bounds,
+    this.spread = false,
     required this.image,
     required this.progress,
     required this.forward,
@@ -382,12 +445,14 @@ class PaperCurlPainter extends CustomPainter {
     required this.paperColor,
   });
 
+  final bool spread;
+  final Rect? bounds;
   final ui.Image image;
   final double progress, fingerY;
   final bool forward;
   final Color paperColor;
 
-  void _drawImage(Canvas canvas, Size size, {double opacity = 1}) {
+  void _drawImage(Canvas canvas, Size size, Rect source, {double opacity = 1}) {
     canvas.save();
     if (!forward) {
       canvas.translate(size.width, 0);
@@ -395,7 +460,7 @@ class PaperCurlPainter extends CustomPainter {
     }
     canvas.drawImageRect(
       image,
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      source,
       Offset.zero & size,
       Paint()
         ..color = Colors.white.withValues(alpha: opacity)
@@ -405,17 +470,27 @@ class PaperCurlPainter extends CustomPainter {
   }
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (progress >= 1 || size.isEmpty) return;
+  void paint(Canvas canvas, Size viewport) {
+    final sheet = bounds ?? Offset.zero & viewport;
+    final size = sheet.size;
+    if (progress >= 1 || size.isEmpty || viewport.isEmpty) return;
+    final source = Rect.fromLTRB(
+      sheet.left / viewport.width * image.width,
+      sheet.top / viewport.height * image.height,
+      sheet.right / viewport.width * image.width,
+      sheet.bottom / viewport.height * image.height,
+    );
     canvas.save();
+    canvas.clipRect(sheet);
+    canvas.translate(sheet.left, sheet.top);
     if (!forward) {
       canvas.translate(size.width, 0);
       canvas.scale(-1, 1);
     }
     final lift = math.sin(math.pi * progress);
-    final hinge = size.width * (1 - progress);
-    final radius = math.min(size.width * .12, 64.0) * lift;
-    final skew = (fingerY - .5) * size.width * .18 * lift;
+    final hinge = size.width * (1 - progress * (spread ? .5 : 1));
+    final radius = math.min(size.width * .035, 18.0) * lift;
+    final skew = (fingerY - .5) * math.min(size.width * .05, 24.0) * lift;
     final top = hinge + skew;
     final bottom = hinge - skew;
     final edgeTop = 2 * top - size.width;
@@ -433,7 +508,7 @@ class PaperCurlPainter extends CustomPainter {
       ..close();
     canvas.save();
     canvas.clipPath(front);
-    _drawImage(canvas, size);
+    _drawImage(canvas, size, source);
     canvas.restore();
     if (progress > 0) {
       final back = Path()
@@ -455,16 +530,16 @@ class PaperCurlPainter extends CustomPainter {
         ..close();
       canvas.drawShadow(
         back,
-        Colors.black.withValues(alpha: .32 * lift),
-        12 * lift,
-        true,
+        Colors.black.withValues(alpha: .18 * lift),
+        3 * lift,
+        false,
       );
-      canvas.drawPath(back, Paint()..color = paperColor);
+      canvas.drawPath(back, Paint()..color = paperColor.withAlpha(255));
       canvas.save();
       canvas.clipPath(back);
       canvas.translate(2 * hinge, 0);
       canvas.scale(-1, 1);
-      _drawImage(canvas, size, opacity: .07);
+      _drawImage(canvas, size, source, opacity: .04);
       canvas.restore();
       final dark = paperColor.computeLuminance() < .4;
       canvas.drawPath(
@@ -494,6 +569,8 @@ class PaperCurlPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant PaperCurlPainter oldDelegate) =>
+      bounds != oldDelegate.bounds ||
+      spread != oldDelegate.spread ||
       image != oldDelegate.image ||
       progress != oldDelegate.progress ||
       forward != oldDelegate.forward ||

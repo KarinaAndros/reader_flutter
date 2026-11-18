@@ -12,6 +12,7 @@ class BookSpotlight extends StatelessWidget {
   const BookSpotlight({
     super.key,
     this.horizontalPadding = 0,
+    this.atmospheres = const {},
     required this.books,
     required this.selectedId,
     required this.onSelected,
@@ -21,6 +22,7 @@ class BookSpotlight extends StatelessWidget {
   });
   final double horizontalPadding;
   final List<LibraryBook> books;
+  final Map<String, BookAtmosphere> atmospheres;
   final String selectedId;
   final ValueChanged<LibraryBook> onSelected, onOpen, onFavorite;
   final bool Function(LibraryBook) isFavorite;
@@ -28,8 +30,10 @@ class BookSpotlight extends StatelessWidget {
   int get _selectedIndex =>
       math.max(0, books.indexWhere((book) => book.id == selectedId));
 
-  void _step(int delta) =>
-      onSelected(books[(_selectedIndex + delta) % books.length]);
+  void _step(int delta) {
+    if (books.length < 2) return;
+    onSelected(books[(_selectedIndex + delta) % books.length]);
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -61,9 +65,10 @@ class BookSpotlight extends StatelessWidget {
                 width: constraints.maxWidth,
                 slideWidth: slideWidth,
                 slideHeight: slideHeight,
-                gap: wide ? 96 : 64,
+                gap: wide ? 128 : 88,
                 wide: wide,
                 books: books,
+                atmospheres: atmospheres,
                 selectedId: selectedId,
                 onSelected: onSelected,
                 onOpen: onOpen,
@@ -164,6 +169,7 @@ class _BookSlideCarousel extends StatefulWidget {
     required this.slideWidth,
     required this.slideHeight,
     required this.gap,
+    required this.atmospheres,
     required this.wide,
     required this.books,
     required this.selectedId,
@@ -175,6 +181,7 @@ class _BookSlideCarousel extends StatefulWidget {
   final double width, slideWidth, slideHeight, gap;
   final bool wide;
   final List<LibraryBook> books;
+  final Map<String, BookAtmosphere> atmospheres;
   final String selectedId;
   final ValueChanged<LibraryBook> onSelected, onOpen, onFavorite;
   final bool Function(LibraryBook) isFavorite;
@@ -184,6 +191,7 @@ class _BookSlideCarousel extends StatefulWidget {
 }
 
 class _BookSlideCarouselState extends State<_BookSlideCarousel> {
+  static const _middlePage = 100000;
   late PageController _controller;
   late int _index;
   final _slideHeights = <String, double>{};
@@ -200,14 +208,59 @@ class _BookSlideCarouselState extends State<_BookSlideCarousel> {
   double get _viewportFraction =>
       ((widget.slideWidth + widget.gap) / widget.width).clamp(.01, 1.0);
 
+  int _centerPage(int selected) => widget.books.length == 1
+      ? 0
+      : _middlePage - _middlePage % widget.books.length + selected;
+
+  PageController _createController() => PageController(
+    initialPage: _index,
+    keepPage: false,
+    viewportFraction: _viewportFraction,
+  );
+
+  int _nearestPage(int selected) {
+    if (widget.books.length == 1) return 0;
+    final page = _controller.hasClients
+        ? _controller.page ?? _index.toDouble()
+        : _index.toDouble();
+    return ((page - selected) / widget.books.length).round() *
+            widget.books.length +
+        selected;
+  }
+
+  bool _sameBooks(List<LibraryBook> previous) {
+    if (previous.length != widget.books.length) return false;
+    for (var index = 0; index < previous.length; index++) {
+      if (previous[index].id != widget.books[index].id) return false;
+    }
+    return true;
+  }
+
+  bool _onScrollEnd(ScrollEndNotification notification) {
+    if (notification.depth != 0 || !_controller.hasClients) return false;
+    // Recenter only at rest and far from the working range. The identical
+    // neighboring books make this jump invisible, including after many loops.
+    if ((_index - _middlePage).abs() > _middlePage ~/ 2 &&
+        widget.books.length > 1) {
+      final controller = _controller;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            controller != _controller ||
+            !controller.hasClients ||
+            controller.position.isScrollingNotifier.value) {
+          return;
+        }
+        controller.jumpToPage(_centerPage(_index % widget.books.length));
+      });
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
-    _index = _selectedIndex;
-    _controller = PageController(
-      initialPage: _index,
-      viewportFraction: _viewportFraction,
-    );
+    _index = _centerPage(_selectedIndex);
+    _controller = _createController();
   }
 
   @override
@@ -220,25 +273,27 @@ class _BookSlideCarouselState extends State<_BookSlideCarousel> {
     final next = _selectedIndex;
     if (oldWidget.width != widget.width ||
         oldWidget.slideWidth != widget.slideWidth ||
-        oldWidget.gap != widget.gap) {
+        oldWidget.gap != widget.gap ||
+        !_sameBooks(oldWidget.books)) {
       final previous = _controller;
-      _index = next;
-      _controller = PageController(
-        initialPage: next,
-        viewportFraction: _viewportFraction,
-      );
+      _index = _centerPage(next);
+      _controller = _createController();
       WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
       return;
     }
-    if (_index == next) return;
-    _index = next;
+    if (_index % widget.books.length == next) return;
+    final target = _nearestPage(next);
+    _index = target;
+    final controller = _controller;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_controller.hasClients) return;
+      if (!mounted || controller != _controller || !controller.hasClients) {
+        return;
+      }
       if (MediaQuery.disableAnimationsOf(context)) {
-        _controller.jumpToPage(_index);
+        controller.jumpToPage(target);
       } else {
-        _controller.animateToPage(
-          _index,
+        controller.animateToPage(
+          target,
           duration: const Duration(milliseconds: 550),
           curve: Curves.easeInOutCubic,
         );
@@ -253,76 +308,88 @@ class _BookSlideCarouselState extends State<_BookSlideCarousel> {
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedSize(
-    duration: MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 200),
-    curve: Curves.easeInOutCubic,
-    alignment: Alignment.topCenter,
-    clipBehavior: Clip.none,
-    child: SizedBox(
+  Widget build(BuildContext context) {
+    final carousel = SizedBox(
       height: (_slideHeights[widget.selectedId] ?? widget.slideHeight) + 52,
-      child: PageView.builder(
-        key: const ValueKey('spotlight-books'),
-        clipBehavior: Clip.none,
-        controller: _controller,
-        itemCount: widget.books.length,
-        onPageChanged: (index) {
-          _index = index;
-          widget.onSelected(widget.books[index]);
-        },
-        itemBuilder: (context, index) => AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final page =
-                _controller.positions.length == 1 &&
-                    _controller.position.hasContentDimensions
-                ? _controller.page ?? _index.toDouble()
-                : _index.toDouble();
-            final pageOffset = (index - page).clamp(-1.0, 1.0);
-            final distance = pageOffset.abs();
-            final reduceMotion = MediaQuery.disableAnimationsOf(context);
-            final angle = reduceMotion ? 0.0 : pageOffset * -.08;
-            return OverflowBox(
-              minHeight: 0,
-              maxHeight: double.infinity,
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, .001)
-                  ..rotateY(angle),
-                child: Transform.scale(
-                  scale: 1 - distance * .045,
-                  child: RepaintBoundary(
-                    child: _MeasuredSlide(
-                      onSizeChanged: (size) =>
-                          _recordHeight(widget.books[index].id, size),
-                      child: SizedBox(
-                        width: widget.slideWidth,
-                        child: _BookSlide(
-                          key: ValueKey(
-                            'spotlight-slide-${widget.books[index].id}',
+      child: NotificationListener<ScrollEndNotification>(
+        key: ObjectKey(_controller),
+        onNotification: _onScrollEnd,
+        child: PageView.builder(
+          key: const ValueKey('spotlight-books'),
+          clipBehavior: Clip.none,
+          controller: _controller,
+          itemCount: widget.books.length == 1 ? 1 : null,
+          physics: widget.books.length == 1
+              ? const NeverScrollableScrollPhysics()
+              : null,
+          onPageChanged: (index) {
+            setState(() => _index = index);
+            final book = widget.books[index % widget.books.length];
+            if (book.id != widget.selectedId) widget.onSelected(book);
+          },
+          itemBuilder: (context, index) {
+            final book = widget.books[index % widget.books.length];
+            return AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final page =
+                    _controller.positions.length == 1 &&
+                        _controller.position.hasContentDimensions
+                    ? _controller.page ?? _index.toDouble()
+                    : _index.toDouble();
+                final pageOffset = (index - page).clamp(-1.0, 1.0);
+                final distance = pageOffset.abs();
+                final reduceMotion = MediaQuery.disableAnimationsOf(context);
+                final angle = reduceMotion ? 0.0 : pageOffset * -.08;
+                return OverflowBox(
+                  minHeight: 0,
+                  maxHeight: double.infinity,
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, .001)
+                      ..rotateY(angle),
+                    child: Transform.scale(
+                      scale: 1 - distance * .045,
+                      child: RepaintBoundary(
+                        child: _MeasuredSlide(
+                          onSizeChanged: (size) => _recordHeight(book.id, size),
+                          child: SizedBox(
+                            width: widget.slideWidth,
+                            child: _BookSlide(
+                              key: ValueKey('spotlight-slide-${book.id}'),
+                              book: book,
+                              atmosphere:
+                                  widget.atmospheres[book.id] ??
+                                  BookAtmosphere.forBook(book),
+                              pageOffset: reduceMotion ? 0 : pageOffset,
+                              wide: widget.wide,
+                              selected: index == _index,
+                              favorite: widget.isFavorite(book),
+                              onOpen: () => widget.onOpen(book),
+                              onFavorite: () => widget.onFavorite(book),
+                            ),
                           ),
-                          book: widget.books[index],
-                          pageOffset: reduceMotion ? 0 : pageOffset,
-                          wide: widget.wide,
-                          selected: index == _selectedIndex,
-                          favorite: widget.isFavorite(widget.books[index]),
-                          onOpen: () => widget.onOpen(widget.books[index]),
-                          onFavorite: () =>
-                              widget.onFavorite(widget.books[index]),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             );
           },
         ),
       ),
-    ),
-  );
+    );
+    if (MediaQuery.disableAnimationsOf(context)) return carousel;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      clipBehavior: Clip.none,
+      child: carousel,
+    );
+  }
 }
 
 class _MeasuredSlide extends SingleChildRenderObjectWidget {
@@ -365,6 +432,7 @@ class _BookSlide extends StatelessWidget {
     super.key,
     required this.book,
     required this.pageOffset,
+    required this.atmosphere,
     required this.wide,
     required this.selected,
     required this.favorite,
@@ -372,15 +440,14 @@ class _BookSlide extends StatelessWidget {
     required this.onFavorite,
   });
   final LibraryBook book;
+  final BookAtmosphere atmosphere;
   final double pageOffset;
   final bool wide, selected, favorite;
   final VoidCallback onOpen, onFavorite;
 
   @override
   Widget build(BuildContext context) {
-    final accent = selected
-        ? Theme.of(context).colorScheme.primary
-        : BookAtmosphere.forBook(book).accentFor(Theme.of(context).brightness);
+    final accent = atmosphere.accentFor(Theme.of(context).brightness);
     final movement = Curves.easeInOutSine.transform(pageOffset.abs());
     final direction = pageOffset.sign * movement;
     final cover = Transform.translate(
@@ -405,9 +472,15 @@ class _BookSlide extends StatelessWidget {
       children: [
         _SpotlightBadge(
           accent: accent,
-          icon: book.isLocal ? Icons.offline_pin_outlined : Icons.auto_awesome,
+          icon: book.isLocal
+              ? Icons.offline_pin_outlined
+              : book.canDownload
+              ? Icons.cloud_download_outlined
+              : Icons.auto_awesome,
           label: book.isLocal
-              ? '${book.isPdf ? 'PDF' : 'TXT'} · На устройстве'
+              ? '${book.formatLabel} · На устройстве'
+              : book.canDownload
+              ? '${book.formatLabel} · Можно скачать'
               : book.mood.isEmpty
               ? 'Для вдохновения'
               : book.mood,
@@ -502,7 +575,11 @@ class _BookSlide extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        book.isLocal ? 'Читать дальше' : 'О книге',
+                        book.isLocal
+                            ? 'Читать дальше'
+                            : book.canDownload
+                            ? 'Читать'
+                            : 'О книге',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

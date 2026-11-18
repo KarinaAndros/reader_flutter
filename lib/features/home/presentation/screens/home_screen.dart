@@ -3,15 +3,18 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_app/core/app_cache.dart';
 import 'package:flutter_app/core/app_updates.dart';
 import 'package:flutter_app/core/theme/app_input_styles.dart';
 import 'package:flutter_app/core/theme/app_theme.dart';
 import 'package:flutter_app/features/home/data/book_library.dart';
+import 'package:flutter_app/features/home/data/book_catalog_repository.dart';
+import 'package:flutter_app/features/home/data/book_download_service.dart';
 import 'package:flutter_app/features/home/data/book_file_importer.dart';
 import 'package:flutter_app/features/home/data/quote_repository.dart';
 import 'package:flutter_app/features/home/data/reading_activity.dart';
 import 'package:flutter_app/features/home/presentation/screens/book_reader_screen.dart';
+import 'package:flutter_app/features/home/presentation/screens/app_settings_screen.dart';
 import 'package:flutter_app/features/home/presentation/screens/text_reader_screen.dart';
 import 'package:flutter_app/features/home/presentation/widgets/ambient_background.dart';
 import 'package:flutter_app/features/home/presentation/widgets/book_cover.dart';
@@ -25,9 +28,16 @@ import 'package:flutter_app/features/home/presentation/widgets/reading_charts.da
 import 'package:flutter_app/features/home/presentation/widgets/reading_welcome_card.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.onToggleTheme});
+  const HomeScreen({
+    super.key,
+    this.onToggleTheme,
+    this.catalog,
+    this.downloads,
+  });
 
   final VoidCallback? onToggleTheme;
+  final BookCatalogRepository? catalog;
+  final BookDownloadService? downloads;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -39,8 +49,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final _quoteRepository = QuoteRepository();
   final _activityRepository = ReadingActivityRepository();
   final _updates = AppUpdates();
+  late final _catalog = widget.catalog ?? BookCatalogRepository();
+  late final _downloads = widget.downloads ?? BookDownloadService();
+  List<LibraryBook> _catalogBooks = editorialBooks;
+  bool _catalogLoading = true;
+  bool _catalogError = false;
+  bool _catalogCached = false;
+  LibraryBook? _downloadingBook;
   LibraryBook? _readingBook;
-  bool _checkingForUpdates = false;
+  bool _settingsOpen = false;
+  int _cacheGeneration = 0;
   ReadingActivity _activity = const ReadingActivity();
   bool _activityErrorShown = false;
   final _scrollController = ScrollController();
@@ -71,8 +89,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _resolveAtmosphere(LibraryBook book) async {
     if (!book.isLocal || _resolvedAtmospheres.containsKey(book.id)) return;
+    final generation = _cacheGeneration;
     final colors = await _atmosphereResolver.resolve(book);
-    if (mounted) setState(() => _resolvedAtmospheres[book.id] = colors);
+    if (mounted && generation == _cacheGeneration) {
+      setState(() => _resolvedAtmospheres[book.id] = colors);
+    }
   }
 
   void _activateBook(LibraryBook book) {
@@ -90,11 +111,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<LibraryBook> get _spotlightBooks {
-    final books = [..._books, ...editorialBooks];
-    if (!books.any((book) => book.id == _activeBook.id)) {
-      books.insert(0, _activeBook);
+    final books = <String, LibraryBook>{};
+    for (final book in [..._books, ..._catalogBooks]) {
+      books.putIfAbsent(book.id, () => book);
     }
-    return books;
+    return books.values.toList();
   }
 
   @override
@@ -102,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _updates.prepareBeforeInstall(_saveBeforeUpdate);
     _loadLibrary();
+    _loadCatalog();
   }
 
   @override
@@ -122,22 +144,34 @@ class _HomeScreenState extends State<HomeScreen> {
     await _activityRepository.flush();
   }
 
-  Future<void> _checkForUpdates() async {
-    if (_checkingForUpdates) return;
-    setState(() => _checkingForUpdates = true);
+  Future<void> _openSettings() async {
+    if (_settingsOpen) return;
+    _settingsOpen = true;
     try {
-      await _updates.check();
-    } on PlatformException catch (error) {
-      _message(
-        error.code == 'update_in_progress'
-            ? 'Проверка обновлений уже выполняется.'
-            : 'Не удалось запустить обновление. Попробуйте открыть MYB снова.',
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Theme(
+            data: _bookTheme,
+            child: AppSettingsScreen(
+              atmosphere: _atmosphere,
+              onCheckForUpdates: AppUpdates.supported ? _updates.check : null,
+              onClearCache: _clearCache,
+            ),
+          ),
+        ),
       );
-    } on MissingPluginException {
-      _message('Обновления доступны в установленной версии MYB для macOS.');
     } finally {
-      if (mounted) setState(() => _checkingForUpdates = false);
+      _settingsOpen = false;
+      if (mounted) _resolveAtmosphere(_activeBook);
     }
+  }
+
+  Future<void> _clearCache() async {
+    await AppCache().clear();
+    _cacheGeneration++;
+    _atmosphereResolver.clearCache();
+    if (!mounted) return;
+    setState(() => _resolvedAtmospheres.clear());
   }
 
   Future<void> _loadLibrary() async {
@@ -149,7 +183,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _books = books;
-        _activeBook = books.firstOrNull ?? editorialBooks.first;
+        _activeBook =
+            books.firstOrNull ??
+            _catalogBooks.firstOrNull ??
+            editorialBooks.first;
         _favorites = favorites;
         _quotes = quotes;
         _activity = activity;
@@ -162,6 +199,46 @@ class _HomeScreenState extends State<HomeScreen> {
       _message(
         'Не удалось загрузить библиотеку. Попробуйте открыть приложение снова.',
       );
+    }
+  }
+
+  Future<void> _loadCatalog() async {
+    if (mounted) setState(() => _catalogLoading = true);
+    final cached = await _catalog.loadCached();
+    if (!mounted) return;
+    if (cached != null) {
+      setState(() {
+        _catalogBooks = cached;
+        _catalogCached = true;
+        if (_books.isEmpty && cached.isNotEmpty) {
+          _activeBook =
+              cached.where((book) => book.id == _activeBook.id).firstOrNull ??
+              cached.first;
+        }
+      });
+    }
+    try {
+      final books = await _catalog.load();
+      if (!mounted) return;
+      setState(() {
+        _catalogBooks = books;
+        _catalogCached = true;
+        _catalogLoading = false;
+        _catalogError = false;
+        _activeBook =
+            _spotlightBooks
+                .where((book) => book.id == _activeBook.id)
+                .firstOrNull ??
+            _books.firstOrNull ??
+            books.firstOrNull ??
+            editorialBooks.first;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _catalogLoading = false;
+        _catalogError = true;
+      });
     }
   }
 
@@ -216,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final files = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['txt', 'pdf'],
+        allowedExtensions: ['txt', 'pdf', 'md'],
       );
       if (files.isEmpty || !mounted) return;
       final file = files.single;
@@ -246,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _message(error.message);
     } catch (_) {
       _message(
-        'Не удалось добавить книгу. Попробуйте выбрать другой TXT или PDF.',
+        'Не удалось добавить книгу. Попробуйте выбрать другой TXT, PDF или MD.',
       );
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -255,8 +332,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _readBook(LibraryBook book) async {
     final path = book.filePath;
-    if (path == null) return;
-    if (!await File(path).exists()) {
+    if (path == null || !await File(path).exists()) {
+      if (book.canDownload) {
+        await _downloadAndRead(book);
+        return;
+      }
+      if (path == null) return;
       _message('Файл перемещён или удалён. Добавьте файл в библиотеку заново.');
       return;
     }
@@ -309,6 +390,34 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _downloadAndRead(LibraryBook book) async {
+    if (_downloadingBook != null) {
+      _message('Дождитесь завершения загрузки книги.');
+      return;
+    }
+    setState(() => _downloadingBook = book);
+    try {
+      final downloaded = await _downloads.download(book);
+      final books = [downloaded, ..._books.where((item) => item.id != book.id)];
+      await _library.save(books);
+      if (!mounted) return;
+      setState(() {
+        _books = books;
+        _activeBook = downloaded;
+        _downloadingBook = null;
+      });
+      await _readBook(downloaded);
+    } on FormatException catch (error) {
+      _message(error.message);
+    } catch (_) {
+      _message(
+        'Не удалось скачать книгу. Проверьте интернет и попробуйте снова.',
+      );
+    } finally {
+      if (mounted) setState(() => _downloadingBook = null);
+    }
+  }
+
   Future<void> _showRandomBookPicker() async {
     final book = await showModalBottomSheet<LibraryBook>(
       context: context,
@@ -324,10 +433,53 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (!mounted || book == null) return;
-    if (book.isLocal) {
+    if (book.canRead) {
       await _readBook(book);
     } else {
       await _showBook(book);
+    }
+  }
+
+  Future<void> _removeBook(LibraryBook book) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить с устройства?'),
+        content: Text(
+          'Локальная копия «${book.title}» будет удалена из библиотеки.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    final remaining = _books.where((item) => item.id != book.id).toList();
+    try {
+      if (!remaining.any((item) => item.filePath == book.filePath)) {
+        await _fileImporter.removeCopy(book.filePath!);
+      }
+      await _library.save(remaining);
+      if (!mounted) return;
+      setState(() {
+        _books = remaining;
+        _previewBook = null;
+        _resolvedAtmospheres.remove(book.id);
+        _activeBook =
+            _spotlightBooks.where((item) => item.id == book.id).firstOrNull ??
+            _spotlightBooks.firstOrNull ??
+            editorialBooks.first;
+      });
+      _message('Книга удалена с устройства.');
+    } catch (_) {
+      _message('Не удалось удалить книгу. Попробуйте снова.');
     }
   }
 
@@ -357,7 +509,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  book.isLocal ? 'НА ВАШЕЙ ПОЛКЕ' : 'КНИЖНОЕ ВДОХНОВЕНИЕ',
+                  book.isLocal
+                      ? 'НА ВАШЕЙ ПОЛКЕ'
+                      : book.canDownload
+                      ? 'КАТАЛОГ КНИГ'
+                      : 'КНИЖНОЕ ВДОХНОВЕНИЕ',
                   style: TextStyle(
                     color: _accent,
                     fontSize: 10,
@@ -392,23 +548,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     FilledButton.icon(
                       onPressed: () {
                         Navigator.pop(sheetContext);
-                        if (book.isLocal) {
+                        if (book.canRead) {
                           _readBook(book);
                         } else {
                           _importBook();
                         }
                       },
                       icon: Icon(
-                        book.isLocal
+                        book.canRead
                             ? Icons.menu_book_rounded
                             : Icons.add_rounded,
                       ),
                       label: Text(
                         book.isLocal
                             ? 'Продолжить чтение'
+                            : book.canDownload
+                            ? 'Скачать и читать'
                             : 'Добавить свою книгу',
                       ),
                     ),
+                    if (book.isLocal)
+                      TextButton.icon(
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Удалить с устройства'),
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _removeBook(book);
+                        },
+                      ),
                     OutlinedButton.icon(
                       onPressed: () async {
                         await _toggleFavorite(book);
@@ -427,10 +594,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                if (!book.isLocal) ...[
+                if (!book.isLocal && !book.canDownload) ...[
                   const SizedBox(height: 16),
                   Text(
-                    'Идея для вашей полки. Для чтения добавьте TXT или PDF с устройства.',
+                    'Идея для вашей полки. Для чтения добавьте TXT, PDF или MD с устройства.',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 12,
@@ -447,9 +614,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<LibraryBook> get _filteredBooks {
-    final source = _section == 1 || _onlyFavorites
-        ? [..._books, ...editorialBooks]
-        : _books;
+    final source = _section == 1 || _onlyFavorites ? _spotlightBooks : _books;
     return source.where((book) {
       final matchesQuery = '${book.title} ${book.author}'
           .toLowerCase()
@@ -472,9 +637,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onPickBook: _showRandomBookPicker,
       onSelectSection: _selectSection,
       onToggleTheme: widget.onToggleTheme,
-      onCheckForUpdates: !_loading && !_checkingForUpdates
-          ? _checkForUpdates
-          : null,
+      onOpenSettings: _loading ? null : _openSettings,
       child: Builder(builder: _buildShell),
     ),
   );
@@ -486,24 +649,23 @@ class _HomeScreenState extends State<HomeScreen> {
         atmosphere: _atmosphere,
         child: SafeArea(
           bottom: false,
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (desktop)
-                LibrarySideNavigation(
-                  selected: _section,
-                  onSelected: _selectSection,
-                ),
+              LibraryAppHeader(
+                desktop: desktop,
+                onToggleTheme: widget.onToggleTheme,
+                onOpenSettings: _loading ? null : _openSettings,
+              ),
               Expanded(
-                child: Column(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    LibraryAppHeader(
-                      desktop: desktop,
-                      onToggleTheme: widget.onToggleTheme,
-                      onCheckForUpdates: AppUpdates.supported && !_loading
-                          ? _checkForUpdates
-                          : null,
-                    ),
+                    if (desktop)
+                      LibrarySideNavigation(
+                        selected: _section,
+                        onSelected: _selectSection,
+                      ),
                     Expanded(
                       child: _loading
                           ? const Center(child: CircularProgressIndicator())
@@ -522,10 +684,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ? 36
                                     : 20,
                                 _section == 0
-                                    ? 128 +
+                                    ? 80 +
                                           MediaQuery.viewPaddingOf(context)
                                               .bottom
-                                    : 96,
+                                    : 80,
                               ),
                               child: Center(
                                 child: ConstrainedBox(
@@ -673,12 +835,17 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   List<Widget> _homeContent(bool desktop) => [
+    Padding(
+      padding: EdgeInsets.symmetric(horizontal: desktop ? 36 : 20),
+      child: _catalogStatus(),
+    ),
     BookSpotlight(
       horizontalPadding: desktop ? 36 : 20,
       books: _spotlightBooks,
       selectedId: _activeBook.id,
+      atmospheres: _resolvedAtmospheres,
       onSelected: _activateBook,
-      onOpen: (book) => book.isLocal ? _readBook(book) : _showBook(book),
+      onOpen: (book) => book.canRead ? _readBook(book) : _showBook(book),
       onFavorite: _toggleFavorite,
       isFavorite: (book) => _favorites.contains(book.id),
     ),
@@ -712,7 +879,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Откройте TXT или PDF с телефона — книга останется на этой полке, и вы сможете продолжить чтение.',
+                    'Откройте TXT, PDF или MD с телефона — книга останется на этой полке, и вы сможете продолжить чтение.',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 13,
@@ -723,7 +890,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   OutlinedButton.icon(
                     onPressed: _importing ? null : _importBook,
                     icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('Открыть TXT или PDF'),
+                    label: const Text('Открыть TXT, PDF или MD'),
                   ),
                 ],
               ),
@@ -739,6 +906,51 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ),
   ];
+
+  Widget _catalogStatus() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (_downloadingBook != null) ...[
+        const LinearProgressIndicator(),
+        const SizedBox(height: 8),
+        Text('Скачиваем «${_downloadingBook!.title}»…'),
+        const SizedBox(height: 16),
+      ],
+      Row(
+        children: [
+          if (_catalogLoading) ...[
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Text(
+              _catalogLoading
+                  ? 'Загружаем каталог…'
+                  : _catalogError
+                  ? _catalogCached
+                        ? 'Каталог недоступен. Показаны сохранённые книги.'
+                        : 'Каталог недоступен. Показана встроенная подборка.'
+                  : _catalogBooks.isEmpty
+                  ? 'В каталоге пока нет книг'
+                  : 'Книг в каталоге: ${_catalogBooks.length}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('refresh-catalog'),
+            tooltip: 'Обновить каталог',
+            onPressed: _catalogLoading ? null : _loadCatalog,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+    ],
+  );
 
   Widget _shelf(List<LibraryBook> books, bool desktop) {
     final width = desktop ? 176.0 : 142.0;
@@ -822,6 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   List<Widget> _libraryContent() => [
+    if (_section == 1 || _downloadingBook != null) _catalogStatus(),
     TextField(
       controller: _searchController,
       focusNode: _searchFocus,
@@ -873,9 +1086,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ? 'Попробуйте другое название или имя автора.'
             : _onlyFavorites
             ? 'Нажмите на сердечко рядом с обложкой.'
-            : 'Добавьте TXT или PDF — книга получит обложку, а прогресс чтения сохранится автоматически.',
+            : 'Добавьте TXT, PDF или MD — книга получит обложку, а прогресс чтения сохранится автоматически.',
         action: _query.isEmpty && !_onlyFavorites
-            ? 'Добавить TXT или PDF'
+            ? 'Добавить TXT, PDF или MD'
             : null,
         onPressed: _importBook,
       ),
