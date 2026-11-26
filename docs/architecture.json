@@ -1,0 +1,42 @@
+{
+  "title": "MYB — библиотека и читалка",
+  "columns": [
+    { "id": "clients", "title": "Клиенты" },
+    { "id": "services", "title": "Сервисы" },
+    { "id": "storage", "title": "Хранилища" },
+    { "id": "external", "title": "Внешние системы" },
+    { "id": "observability", "title": "Логи" }
+  ],
+  "nodes": [
+    { "id": "myb-app", "label": "Приложение MYB", "sub": "Dart · Flutter · Android, iOS, macOS", "column": "clients", "kind": "client" },
+    { "id": "macos-updater", "label": "Обновления MYB", "sub": "Swift · Sparkle · встроено в приложение macOS", "column": "clients", "kind": "client" },
+    { "id": "catalog-api", "label": "API каталога", "sub": "Go · net/http · :8080 по умолчанию", "column": "services", "kind": "service" },
+    { "id": "catalog-db", "label": "SQLite", "sub": "myb.db · таблица books", "column": "storage", "kind": "storage" },
+    { "id": "preferences", "label": "SharedPreferences", "sub": "Кэш каталога, библиотека, прогресс, цитаты, статистика и настройки", "column": "storage", "kind": "storage" },
+    { "id": "app-books", "label": "Файлы библиотеки", "sub": "Документы приложения · books/ · PDF, TXT, Markdown", "column": "storage", "kind": "storage" },
+    { "id": "local-files", "label": "Файлы пользователя", "sub": "Исходные PDF, TXT и Markdown для импорта", "column": "storage", "kind": "storage" },
+    { "id": "liblermont-ru", "label": "old.liblermont.ru", "sub": "Источник PDF по ссылкам каталога", "column": "external", "kind": "external" },
+    { "id": "olehnik-ru", "label": "olehnik.ru", "sub": "Источник файлов по ссылкам каталога", "column": "external", "kind": "external" },
+    { "id": "github-releases", "label": "GitHub Releases", "sub": "Канал обновлений macOS · appcast.xml и подписанные ZIP", "column": "external", "kind": "external" },
+    { "id": "backend-stdout", "label": "stdout сервера", "sub": "Сообщения запуска и ошибки Go", "column": "observability", "kind": "observability" }
+  ],
+  "edges": [
+    { "from": "myb-app", "to": "catalog-api", "type": "http", "label": "GET /books · адрес BOOKS_API_URL" },
+    { "from": "catalog-api", "to": "catalog-db", "type": "data", "label": "Создаёт таблицу и добавляет стартовую книгу при запуске, читает каталог" },
+    { "from": "myb-app", "to": "preferences", "type": "data", "label": "Читает и сохраняет данные библиотеки и настройки" },
+    { "from": "myb-app", "to": "app-books", "type": "data", "label": "Записывает импорт и загрузки, читает книги офлайн" },
+    { "from": "myb-app", "to": "local-files", "type": "data", "label": "Читает выбранные для импорта файлы" },
+    { "from": "myb-app", "to": "liblermont-ru", "type": "http", "label": "GET файла по полю link" },
+    { "from": "myb-app", "to": "olehnik-ru", "type": "http", "label": "GET файла по полю link" },
+    { "from": "macos-updater", "to": "github-releases", "type": "http", "label": "GET appcast.xml и архива обновления" },
+    { "from": "macos-updater", "to": "myb-app", "type": "event", "label": "prepareForUpdate · локальный вызов для сохранения прогресса перед перезапуском" },
+    { "from": "catalog-api", "to": "backend-stdout", "type": "metrics", "label": "Пишет сообщения запуска и ошибки" }
+  ],
+  "views": [
+    { "id": "all", "title": "Общая карта" },
+    { "id": "http", "title": "Сетевые вызовы", "edgeTypes": ["http"] },
+    { "id": "data", "title": "Данные и хранилища", "edgeTypes": ["data"] },
+    { "id": "updates", "title": "Обновления macOS", "nodes": ["myb-app", "macos-updater", "github-releases"] },
+    { "id": "logs", "title": "Логи сервера", "edgeTypes": ["metrics"] }
+  ]
+}
